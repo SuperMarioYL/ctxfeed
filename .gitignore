@@ -1,0 +1,64 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+develop-eggs/
+sdist/
+wheels/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Type checkers
+.mypy_cache/
+.pytype/
+.pyre/
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ctxfeed runtime state (local SQLite cache store)
+.ctxfeed/
+
+# generated benchmark output (run: python -m ctxfeed.benchmark.repo_qa)
+benchmark/results.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# build scratch
+.builder_*
+.build_metadata*
+.stage_*
+.build_ctx.json
+_build_ctx.json
+*_BLOCKED.md
+BUILD_SETUP_NEXT_STEPS.md
+DRIFT*
+
+# local agent config
+.claude/
+CLAUDE.md

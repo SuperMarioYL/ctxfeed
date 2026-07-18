@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ctxfeed"
+version = "0.1.0"
+description = "Local MCP project-context backend that shards a whole repo into GLM-5.2's 1M-token window"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "SuperMarioYL" }]
+keywords = [
+    "mcp",
+    "glm",
+    "long-context",
+    "coding-agent",
+    "repo-context",
+    "shard-plan",
+    "prefix-cache",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "mcp>=1.2",
+    "httpx>=0.27",
+    "tiktoken>=0.7",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.scripts]
+ctxfeed = "ctxfeed.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/SuperMarioYL/ctxfeed"
+Repository = "https://github.com/SuperMarioYL/ctxfeed"
+Issues = "https://github.com/SuperMarioYL/ctxfeed/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ctxfeed"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/ctxfeed",
+    "tests",
+    "pyproject.toml",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "VERSION",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = ["-ra", "--strict-markers"]

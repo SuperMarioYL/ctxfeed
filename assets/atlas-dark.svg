@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 360" width="880" height="360"
+     font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif"
+     role="img" aria-label="ctxfeed architecture: repo files → ShardPlan builder → GLM-5.2 (1M ctx), cache-key store → MCP server → coding agents">
+  <defs>
+    <marker id="ah-d" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#5A5A66"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="880" height="360" fill="#1D1D1F"/>
+
+  <!-- ===== static base connectors (动画参数与 atlas-light.svg 逐字一致) ===== -->
+  <g stroke="#3A3A44" stroke-width="1.5" fill="none">
+    <line x1="172" y1="72" x2="216" y2="72" marker-end="url(#ah-d)"/>
+    <line x1="392" y1="72" x2="440" y2="72" marker-end="url(#ah-d)"/>
+    <line x1="304" y1="104" x2="304" y2="232" marker-end="url(#ah-d)"/>
+    <line x1="392" y1="264" x2="440" y2="264" marker-end="url(#ah-d)"/>
+    <line x1="600" y1="264" x2="648" y2="264" marker-end="url(#ah-d)"/>
+    <path d="M 520 104 Q 455 168 392 232" stroke-dasharray="4 6" marker-end="url(#ah-d)"/>
+  </g>
+
+  <!-- ===== marching dash data flow (顶层, 数据方向) ===== -->
+  <g stroke-width="1.5" fill="none" stroke-linecap="round">
+    <line x1="172" y1="72" x2="212" y2="72" stroke="#4DA3FF" stroke-opacity="0.6" stroke-dasharray="6 10">
+      <animate attributeName="stroke-dashoffset" from="32" to="0" dur="1.6s" repeatCount="indefinite"/>
+    </line>
+    <line x1="392" y1="72" x2="436" y2="72" stroke="#8985FF" stroke-opacity="0.6" stroke-dasharray="6 10">
+      <animate attributeName="stroke-dashoffset" from="32" to="0" dur="1.6s" begin="-0.8s" repeatCount="indefinite"/>
+    </line>
+    <line x1="304" y1="104" x2="304" y2="228" stroke="#8985FF" stroke-opacity="0.55" stroke-dasharray="6 10">
+      <animate attributeName="stroke-dashoffset" from="32" to="0" dur="1.8s" begin="-0.4s" repeatCount="indefinite"/>
+    </line>
+    <line x1="600" y1="264" x2="644" y2="264" stroke="#8985FF" stroke-opacity="0.6" stroke-dasharray="6 10">
+      <animate attributeName="stroke-dashoffset" from="32" to="0" dur="1.6s" begin="-1.1s" repeatCount="indefinite"/>
+    </line>
+  </g>
+
+  <!-- ===== animateMotion packet dots ===== -->
+  <g>
+    <circle r="3" fill="#4DA3FF">
+      <animateMotion path="M172,72 L212,72" dur="2.4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="2.4s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="3" fill="#8985FF">
+      <animateMotion path="M392,72 L436,72" dur="2.4s" begin="-1.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="2.4s" begin="-1.2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- ===== nodes (dark 列语义色; 文字填充用对应浅色) ===== -->
+  <g>
+    <rect x="24" y="40" width="148" height="64" rx="15" fill="#4DA3FF" fill-opacity="0.16" stroke="#4DA3FF" stroke-width="1.5"/>
+    <text x="98" y="78" text-anchor="middle" font-size="14" font-weight="600" fill="#4DA3FF">Repo files</text>
+    <text x="98" y="94" text-anchor="middle" font-size="10" fill="#A1A1A8">1000+ files</text>
+  </g>
+  <g>
+    <rect x="216" y="40" width="176" height="64" rx="15" fill="#8985FF" fill-opacity="0.16" stroke="#8985FF" stroke-width="1.5">
+      <animate attributeName="fill-opacity" values="0.16;0.24;0.16" keyTimes="0;0.5;1" dur="3.2s"
+               calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>
+    </rect>
+    <text x="304" y="72" text-anchor="middle" font-size="14" font-weight="600" fill="#8985FF">ctxfeed ingest</text>
+    <text x="304" y="90" text-anchor="middle" font-size="11" font-weight="500" fill="#8985FF">ShardPlan builder</text>
+  </g>
+  <g>
+    <rect x="440" y="40" width="160" height="64" rx="15" fill="#2DC79A" fill-opacity="0.16" stroke="#2DC79A" stroke-width="1.5">
+      <animate attributeName="fill-opacity" values="0.16;0.24;0.16" keyTimes="0;0.5;1" dur="3.2s" begin="-1.1s"
+               calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>
+    </rect>
+    <text x="520" y="72" text-anchor="middle" font-size="14" font-weight="600" fill="#2DC79A">GLM-5.2 API</text>
+    <text x="520" y="90" text-anchor="middle" font-size="11" fill="#2DC79A">1M-token window</text>
+  </g>
+  <g>
+    <rect x="216" y="232" width="176" height="64" rx="15" fill="#4DA3FF" fill-opacity="0.13" stroke="#4DA3FF" stroke-width="1.5"/>
+    <text x="304" y="264" text-anchor="middle" font-size="13" font-weight="600" fill="#4DA3FF">cache-key store</text>
+    <text x="304" y="282" text-anchor="middle" font-size="10" fill="#A1A1A8">sqlite · prefix-cache reuse</text>
+  </g>
+  <g>
+    <rect x="440" y="232" width="160" height="64" rx="15" fill="#8985FF" fill-opacity="0.16" stroke="#8985FF" stroke-width="1.5">
+      <animate attributeName="fill-opacity" values="0.16;0.24;0.16" keyTimes="0;0.5;1" dur="3.2s" begin="-2.2s"
+               calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>
+    </rect>
+    <text x="520" y="264" text-anchor="middle" font-size="13" font-weight="600" fill="#8985FF">MCP server</text>
+    <text x="520" y="282" text-anchor="middle" font-size="10" fill="#8985FF">stdio · one round-trip</text>
+  </g>
+  <g>
+    <rect x="648" y="232" width="200" height="64" rx="15" fill="#2DC79A" fill-opacity="0.16" stroke="#2DC79A" stroke-width="1.5"/>
+    <text x="748" y="264" text-anchor="middle" font-size="13" font-weight="600" fill="#2DC79A">Claude Code</text>
+    <text x="748" y="282" text-anchor="middle" font-size="10" fill="#2DC79A">Cursor · Codex</text>
+  </g>
+</svg>
