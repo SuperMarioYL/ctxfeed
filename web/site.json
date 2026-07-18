@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "name": "ctxfeed",
+  "github": "https://github.com/SuperMarioYL/ctxfeed",
+  "host": "ctxfeed.lei6393.com",
+  "lang": { "primary": "zh", "toggle": true },
+  "accent": ["#0071E3", "#0A84FF", "#5E5CE6"],
+  "hero": {
+    "eyebrow": { "zh": "本地 · 无账号 · 单命令", "en": "Local · No account · One command" },
+    "headline": {
+      "zh": "把整个仓库\n塞进 coding agent 的上下文",
+      "en": "Feed your whole repo\ninto your coding agent"
+    },
+    "sub": {
+      "zh": "按缓存感知顺序把 1000+ 文件切片塞进 GLM-5.2 的 100 万 token 窗口，一次 MCP 往返拿到答案——绕过 ChatGPT 的 40 文件上限，单次查询成本低于旗舰模型。",
+      "en": "Shard 1000+ files in cache-aware order into GLM-5.2's 1M-token window so coding agents fetch the whole repo in one MCP round-trip — past ChatGPT's 40-file cap, below flagship-model per-query cost."
+    },
+    "command": "uvx ctxfeed init",
+    "cta": { "zh": "开始", "en": "Get started" },
+    "ctaGithub": { "zh": "GitHub", "en": "GitHub" },
+    "scroll": { "zh": "向下看", "en": "Scroll" }
+  },
+  "advantages": [
+    {
+      "title": { "zh": "一次调用查 1000+ 文件", "en": "Query 1000+ files in one call" },
+      "body": {
+        "zh": "不再被 40 文件上限卡死——整个仓库一次塞进上下文，agent 看全貌再答。",
+        "en": "Stop hitting the 40-file wall — the whole repo goes into context in one shot so the agent sees the full picture before answering."
+      },
+      "chips": ["› 1024 文件 / 单次", "› 25.6× 文件上限"]
+    },
+    {
+      "title": { "zh": "只重刷改动文件", "en": "Re-ingest only what changed" },
+      "body": {
+        "zh": "缓存感知的摄入顺序：依赖清单、README、类型定义先入，之后只重摄入改动文件，不重算整个仓库。",
+        "en": "A cache-aware ingest order: deps, README and type defs go in first, then only changed files are re-ingested — never the whole repo twice."
+      },
+      "chips": ["› 只重刷改动", "› 不重算整个仓库"]
+    },
+    {
+      "title": { "zh": "单次查询更省", "en": "Cheaper per query" },
+      "body": {
+        "zh": "用国产长上下文模型的 100 万 token 窗口，单次全仓库查询的成本低于旗舰模型，附成本对比仪表盘。",
+        "en": "A domestic long-context model's 1M-token window means a whole-repo query costs less than a flagship model — with a cost-delta dashboard to prove it."
+      },
+      "chips": ["› 1M token 窗口", "› 成本对比仪表盘"]
+    },
+    {
+      "title": { "zh": "本地 MCP，一次往返", "en": "Local MCP, one round-trip" },
+      "body": {
+        "zh": "stdio MCP 服务器，Claude Code / Cursor / Codex 一次往返拿到整个仓库的答案，数据不离本机。",
+        "en": "A stdio MCP server — Claude Code, Cursor and Codex fetch the whole repo's answer in one round-trip, with data staying on your machine."
+      },
+      "chips": ["› Claude Code / Cursor / Codex", "› stdio MCP · 一次往返"]
+    }
+  ],
+  "scene": {
+    "kind": "hub-nodes",
+    "nodes": ["repo files", "ctxfeed", "GLM-5.2 1M", "Claude Code", "Cursor", "Codex"]
+  },
+  "cta": {
+    "headline": { "zh": "让 agent 看见整个仓库", "en": "Let your agent see the whole repo" },
+    "sub": { "zh": "一条命令装好本地 MCP 后端，绕过文件上限。", "en": "One command installs the local MCP backend — past the file cap." },
+    "button": { "zh": "uvx ctxfeed init", "en": "uvx ctxfeed init" }
+  },
+  "footer": { "tag": { "zh": "本地 · MIT · 一次往返", "en": "Local · MIT · One round-trip" } }
+}
