@@ -53,10 +53,39 @@ from .cost import (
 )
 from .cost.delta import GLM_52_COST, OPUS_COST
 from .ingest import IngestConfig
+from .models.deepseek import DeepSeekConfig
 from .models.glm import GLMConfig
 
 # A single console for the whole CLI — consistent theme across subcommands.
 _console: "Optional[Console]" = None
+
+# v0.2: selectable cost-fallback model. CTXFEED_MODEL env overrides the default
+# (glm) so `ctxfeed mcp` (run as an MCP server) can target DeepSeek V4 without a
+# CLI flag. Valid values: "glm" (GLM-5.2 1M, default) | "deepseek" (V4 128k).
+_VALID_MODELS = ("glm", "deepseek")
+
+
+def _resolve_model(model: Optional[str]) -> str:
+    """Resolve the backing model from --model or CTXFEED_MODEL env."""
+    resolved = (model or os.environ.get("CTXFEED_MODEL", "") or "glm").strip().lower()
+    if resolved not in _VALID_MODELS:
+        raise SystemExit(
+            f"Unknown --model {resolved!r}; expected one of {list(_VALID_MODELS)}"
+        )
+    return resolved
+
+
+def _for_repo(root: Path, model: str):
+    """Build a CachePlan for the resolved model (v0.2 feat-deepseek-selectable-fallback)."""
+    if model == "deepseek":
+        return CachePlan.for_repo(
+            root,
+            model="deepseek",
+            deepseek=DeepSeekConfig(
+                api_key=os.environ.get("DEEPSEEK_API_KEY", "")
+            ),
+        )
+    return CachePlan.for_repo(root, model="glm", glm=_glm_config_from_env())
 
 
 def _get_console() -> "Console":
@@ -118,6 +147,10 @@ def _build_app():
         repo: Optional[str] = typer.Option(
             None, "--repo", "-r", help="Repo root (default: cwd)."
         ),
+        model: str = typer.Option(
+            "glm", "--model", "-m",
+            help="Backing model: glm (GLM-5.2 1M, default) | deepseek (V4 128k cost-fallback).",
+        ),
         quiet: bool = typer.Option(
             False, "--quiet", "-q", help="Only print the summary line."
         ),
@@ -126,17 +159,22 @@ def _build_app():
 
         The first "star-able" number lands here: files accepted (1000+
         vs ChatGPT's 40-file cap). Runs dry-run by default (set
-        ``ZHIPU_API_KEY`` for a live GLM-5.2 call).
+        ``ZHIPU_API_KEY`` for a live GLM-5.2 call, or ``DEEPSEEK_API_KEY``
+        with ``--model deepseek`` for the cost-fallback).
         """
         root = _resolve_repo(repo)
+        resolved_model = _resolve_model(model)
         glm = _glm_config_from_env()
         if not quiet:
+            model_label = "GLM-5.2 (1M ctx)" if resolved_model == "glm" else "DeepSeek V4 (128k ctx)"
+            mode = "dry-run" if (
+                resolved_model == "glm" and glm.effective_dry_run()
+            ) else ("dry-run" if resolved_model == "deepseek" and not os.environ.get("DEEPSEEK_API_KEY") else "live")
             _print_banner(
                 f"ctxfeed init — {root}\n"
-                f"model=GLM-5.2 (1M ctx)  "
-                f"mode={'dry-run' if glm.effective_dry_run() else 'live'}"
+                f"model={model_label}  mode={mode}"
             )
-        with CachePlan.for_repo(root, glm=glm) as cp:
+        with _for_repo(root, resolved_model) as cp:
             result = cp.ingest()
             fv = cp.files_vs_cap()
         if quiet:
@@ -171,6 +209,10 @@ def _build_app():
         repo: Optional[str] = typer.Option(
             None, "--repo", "-r", help="Repo root (default: cwd)."
         ),
+        model: str = typer.Option(
+            "glm", "--model", "-m",
+            help="Backing model: glm (default) | deepseek.",
+        ),
     ) -> None:
         """Show what a file or dir would add to the ShardPlan.
 
@@ -181,6 +223,7 @@ def _build_app():
         cache bookkeeping (defaults to cwd).
         """
         root = _resolve_repo(repo)
+        resolved_model = _resolve_model(model)
         target = Path(path).expanduser()
         if not target.is_absolute():
             target = (Path.cwd() / target)
@@ -193,8 +236,7 @@ def _build_app():
                 f"{target} is outside repo root {root}", style="red"
             )
             raise SystemExit(2)
-        glm = _glm_config_from_env()
-        with CachePlan.for_repo(root, glm=glm) as cp:
+        with _for_repo(root, resolved_model) as cp:
             files = cp.list_files()
         # Filter to the requested path.
         if target == root:
@@ -230,6 +272,10 @@ def _build_app():
         repo: Optional[str] = typer.Option(
             None, "--repo", "-r", help="Repo root (default: cwd)."
         ),
+        model: str = typer.Option(
+            "glm", "--model", "-m",
+            help="Backing model: glm (default) | deepseek.",
+        ),
         output_tokens: int = typer.Option(
             1024, "--output-tokens", "-o",
             help="Expected answer length in tokens (default 1024).",
@@ -240,13 +286,14 @@ def _build_app():
         The second "star-able" number: GLM-5.2 + DeepSeek V4 vs Claude
         Opus, using the conservative published rates from
         :mod:`ctxfeed.cost.delta`. Uses the repo's planned token count
-        as the input-token figure.
+        as the input-token figure. Read-only (v0.2): does not mutate the
+        cache store.
         """
         root = _resolve_repo(repo)
-        glm = _glm_config_from_env()
-        with CachePlan.for_repo(root, glm=glm) as cp:
-            delta = cp.cost_delta(output_tokens=output_tokens)
-            fv = cp.files_vs_cap()
+        resolved_model = _resolve_model(model)
+        with _for_repo(root, resolved_model) as cp:
+            # v0.2 fix: single non-persisting pass for both numbers.
+            delta, fv = cp.cost_and_files(output_tokens=output_tokens)
         _print_banner("ctxfeed cost-delta", style="cyan")
         render_dashboard(delta, repo_files=fv["files_accepted"])
 
@@ -256,10 +303,15 @@ def _build_app():
             None, "--repo", "-r",
             help="Repo root (also settable via CTXFEED_REPO_ROOT env).",
         ),
+        model: str = typer.Option(
+            "glm", "--model", "-m",
+            help="Backing model: glm (default) | deepseek (also settable via CTXFEED_MODEL).",
+        ),
     ) -> None:
         """Run the stdio MCP server (for ``claude mcp add``)."""
+        resolved_model = _resolve_model(model)
         from .mcp_server import run_stdio
-        run_stdio(repo)
+        run_stdio(repo, resolved_model)
 
     @app.callback(invoke_without_command=True)
     def main(

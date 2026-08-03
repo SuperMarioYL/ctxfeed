@@ -46,6 +46,13 @@ try:
 except ImportError:  # pragma: no cover — tiktoken is a declared dep
     _TIKTOKEN_AVAILABLE = False
 
+try:
+    import pathspec
+
+    _PATHSPEC_AVAILABLE = True
+except ImportError:  # pragma: no cover — pathspec is a declared dep as of v0.2
+    _PATHSPEC_AVAILABLE = False
+
 
 # ---------------------------------------------------------------------------
 # Core data types
@@ -255,17 +262,53 @@ def _classify_layer(rel_path: str) -> str:
     return "body"
 
 
+def _load_ignore_spec(root: Path) -> Any:
+    """Build a pathspec PathSpec from ``.gitignore`` + ``.ctxfeedignore``.
+
+    v0.2 (feat-gitignore-aware-scan): the scan used to filter only by the
+    hardcoded ``ignore_dirs`` / ``ignore_names`` tuples, so generated/ignored
+    files not in those lists (build output, ``*.gen.*``, local config) were
+    ingested, wasting the context budget. This loads the repo's own
+    ``.gitignore`` (and an optional ``.ctxfeedignore`` override) as
+    gitwildmatch patterns so the scan matches the user's actual repo hygiene.
+    The hardcoded tuple stays as a baseline floor (applied first, in
+    :func:`scan_repo`). Returns ``None`` when pathspec is unavailable or no
+    ignore files exist (degrades cleanly to the v0.1 behavior).
+    """
+    if not _PATHSPEC_AVAILABLE:
+        return None
+    patterns: list[str] = []
+    for name in (".gitignore", ".ctxfeedignore"):
+        p = root / name
+        if p.is_file():
+            try:
+                patterns.extend(
+                    p.read_text(encoding="utf-8", errors="replace").splitlines()
+                )
+            except OSError:
+                continue
+    if not patterns:
+        return None
+    return pathspec.PathSpec.from_lines("gitignore", patterns)
+
+
 def scan_repo(root: Path | str, config: IngestConfig | None = None) -> list[FileChunk]:
     """Walk a repo directory and collect FileChunks for all ingestible files.
 
     Files are filtered by extension, size, and ignore patterns. Each file's
     content is read, tokenized, and hashed. The ``layer`` field is set by
     :func:`_classify_layer` for the stable_prefix / body split.
+
+    v0.2: in addition to the hardcoded ``ignore_dirs`` / ``ignore_names`` tuple,
+    the scan honors the repo's ``.gitignore`` (and an optional
+    ``.ctxfeedignore`` override) so generated/ignored files are excluded.
     """
     config = config or IngestConfig()
     root = Path(root).resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"Repo root not found: {root}")
+
+    ignore_spec = _load_ignore_spec(root)
 
     chunks: list[FileChunk] = []
 
@@ -293,6 +336,11 @@ def scan_repo(root: Path | str, config: IngestConfig | None = None) -> list[File
                 continue
 
             rel_path = str(fpath.relative_to(root)).replace(os.sep, "/")
+
+            # v0.2: honor .gitignore / .ctxfeedignore (skip matched files).
+            if ignore_spec is not None and ignore_spec.match_file(rel_path):
+                continue
+
             tokens = count_tokens(content)
             file_hash = hashlib.sha256(
                 content.encode("utf-8")

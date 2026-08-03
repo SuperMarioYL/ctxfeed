@@ -40,11 +40,13 @@ from typing import Any, Optional
 
 from .cache_plan import CachePlan
 from .ingest import IngestConfig
+from .models.deepseek import DeepSeekConfig
 from .models.glm import GLMConfig
 
 __all__ = ["build_server", "run_stdio", "CTXFEED_REPO_ROOT_ENV"]
 
 CTXFEED_REPO_ROOT_ENV = "CTXFEED_REPO_ROOT"
+CTXFEED_MODEL_ENV = "CTXFEED_MODEL"
 
 
 def _resolve_repo_root(repo: Optional[str]) -> Path:
@@ -61,15 +63,37 @@ def _resolve_repo_root(repo: Optional[str]) -> Path:
     return p
 
 
-def _load_glm_config() -> GLMConfig:
-    """Build a GLMConfig from env (key empty → dry-run)."""
-    return GLMConfig(
-        api_key=os.environ.get("ZHIPU_API_KEY", "")
-        or os.environ.get("GLM_API_KEY", ""),
+def _resolve_model(model: Optional[str]) -> str:
+    """Resolve the backing model: --model arg, else CTXFEED_MODEL env, else glm."""
+    resolved = (model or os.environ.get(CTXFEED_MODEL_ENV, "") or "glm").strip().lower()
+    if resolved not in ("glm", "deepseek"):
+        raise RuntimeError(
+            f"Unknown model {resolved!r}; expected 'glm' or 'deepseek'"
+        )
+    return resolved
+
+
+def _for_repo(root: Path, model: str) -> CachePlan:
+    """Build a CachePlan for the resolved model (v0.2 feat-deepseek-selectable-fallback)."""
+    if model == "deepseek":
+        return CachePlan.for_repo(
+            root,
+            model="deepseek",
+            deepseek=DeepSeekConfig(
+                api_key=os.environ.get("DEEPSEEK_API_KEY", "")
+            ),
+        )
+    return CachePlan.for_repo(
+        root,
+        model="glm",
+        glm=GLMConfig(
+            api_key=os.environ.get("ZHIPU_API_KEY", "")
+            or os.environ.get("GLM_API_KEY", ""),
+        ),
     )
 
 
-def build_server(repo_root: Path | str | None = None):
+def build_server(repo_root: Path | str | None = None, model: Optional[str] = None):
     """Build the FastMCP server with ``query_repo`` + ``list_files`` tools.
 
     Returns the :class:`mcp.server.fastmcp.FastMCP` instance. Callers
@@ -77,6 +101,9 @@ def build_server(repo_root: Path | str | None = None):
     directly; :func:`run_stdio` runs the stdio transport.
 
     ``repo_root`` may be a path or None (resolved from env at call time).
+    ``model`` selects the backing model (v0.2): ``"glm"`` (default, GLM-5.2 1M)
+    or ``"deepseek"`` (V4 128k cost-fallback); overridable per-tool via the
+    ``CTXFEED_MODEL`` env var.
     """
     from mcp.server.fastmcp import FastMCP
 
@@ -89,26 +116,30 @@ def build_server(repo_root: Path | str | None = None):
         ),
     )
 
-    def _plan(repo_arg: Optional[str]) -> CachePlan:
+    def _plan(repo_arg: Optional[str], model_arg: Optional[str] = None) -> CachePlan:
         root = _resolve_repo_root(repo_arg or repo_root)
-        return CachePlan.for_repo(root, glm=_load_glm_config())
+        return _for_repo(root, _resolve_model(model_arg) if model_arg else _resolve_model(model))
 
     @server.tool()
-    def query_repo(question: str, repo: str = "") -> str:
+    def query_repo(question: str, repo: str = "", model: str = "") -> str:
         """Answer ``question`` using the whole repo's files in-context.
 
-        Ingests the repo's ingestible files into GLM-5.2's 1M-token
-        window (cache-aware ShardPlan ordering) and asks the question
-        in a single model round-trip. Returns the answer prefixed with
-        a one-line context summary (files + tokens).
+        Ingests the repo's ingestible files into the selected model's context
+        window (cache-aware ShardPlan ordering; GLM-5.2 1M by default, DeepSeek
+        V4 128k via ``model="deepseek"``) and asks the question in a single model
+        round-trip. Returns the answer prefixed with a one-line context summary
+        (files + tokens). Transient API errors (429/5xx) are retried with backoff;
+        a terminal failure returns a structured error (v0.2).
 
         Args:
             question: the repo-wide question (e.g. "where is the auth
                 middleware handled?").
-            repo: optional repo root override (defaults to the
-                ``--repo`` arg or ``CTXFEED_REPO_ROOT`` env var).
+            repo: optional repo root override (defaults to the ``--repo``
+                arg or ``CTXFEED_REPO_ROOT`` env var).
+            model: optional model override (``"glm"`` | ``"deepseek"``;
+                defaults to the server's ``--model`` / ``CTXFEED_MODEL``).
         """
-        with _plan(repo) as cp:
+        with _plan(repo, model) as cp:
             qr = cp.query(question)
         return (
             f"[ctxfeed] {qr.files_in_context} files in context "
@@ -116,13 +147,13 @@ def build_server(repo_root: Path | str | None = None):
         )
 
     @server.tool()
-    def list_files(repo: str = "") -> str:
+    def list_files(repo: str = "", model: str = "") -> str:
         """List the ingestible files ctxfeed would serve in-context.
 
         One line per file: path · tokens · layer · cached?. Useful for
         an agent to see what's about to be served before querying.
         """
-        with _plan(repo) as cp:
+        with _plan(repo, model) as cp:
             files = cp.list_files()
         if not files:
             return "[ctxfeed] no ingestible files found in repo"
@@ -135,15 +166,16 @@ def build_server(repo_root: Path | str | None = None):
         return "\n".join(lines)
 
     @server.tool()
-    def cost_delta(repo: str = "") -> str:
+    def cost_delta(repo: str = "", model: str = "") -> str:
         """Per-query token cost vs Claude Opus at equal repo size.
 
         The m3 "star-able" number: GLM-5.2 + DeepSeek V4 vs Opus, plus
-        files-accepted vs ChatGPT's 40-file cap.
+        files-accepted vs ChatGPT's 40-file cap. Read-only (v0.2): does
+        not mutate the cache store.
         """
-        with _plan(repo) as cp:
-            d = cp.cost_delta()
-            fv = cp.files_vs_cap()
+        with _plan(repo, model) as cp:
+            # v0.2 fix: single non-persisting pass for both numbers.
+            d, fv = cp.cost_and_files()
         return (
             f"[ctxfeed] files accepted: {fv['files_accepted']} vs "
             f"ChatGPT's {fv['chatgpt_cap']}-file cap\n"
@@ -157,13 +189,15 @@ def build_server(repo_root: Path | str | None = None):
     return server
 
 
-def run_stdio(repo_root: Path | str | None = None) -> None:
+def run_stdio(
+    repo_root: Path | str | None = None, model: Optional[str] = None
+) -> None:
     """Run the ctxfeed MCP server over stdio transport.
 
     This is the entry point the CLI's ``ctxfeed mcp`` subcommand calls.
     Blocks the calling process; the agent client drives the protocol.
     """
-    server = build_server(repo_root)
+    server = build_server(repo_root, model)
     server.run(transport="stdio")
 
 

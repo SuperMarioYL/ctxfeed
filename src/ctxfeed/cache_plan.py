@@ -47,7 +47,12 @@ from .ingest import (
     scan_repo,
 )
 from .models import ModelClient, ModelResponse
-from .models.glm import GLMClient, GLMConfig
+from .models.glm import GLMClient, GLMConfig, GLM_CONTEXT_WINDOW
+from .models.deepseek import (
+    DEEPSEEK_CONTEXT_WINDOW,
+    DeepSeekClient,
+    DeepSeekConfig,
+)
 from .shard import ShardPlan, ShardPlanBuilder, build_shard_plan
 
 __all__ = [
@@ -150,27 +155,52 @@ class CachePlan:
         *,
         glm: Optional[GLMConfig] = None,
         config: IngestConfig | None = None,
+        model: str = "glm",
+        deepseek: Optional[DeepSeekConfig] = None,
     ) -> "CachePlan":
-        """Build a :class:`CachePlan` rooted at ``root`` with a GLM client.
+        """Build a :class:`CachePlan` rooted at ``root`` with a model client.
 
-        Pass ``glm=GLMConfig(api_key=...)`` for live calls; omit for the
-        deterministic dry-run (the default in CI / tests / first install).
+        v0.2 (feat-deepseek-selectable-fallback): ``model`` selects the backing
+        model — ``"glm"`` (default, GLM-5.2 1M window) or ``"deepseek"`` (DeepSeek
+        V4 128k window, the cost-fallback). The TokenBudget window is recomputed
+        against the selected model's context window so the ShardPlan fits. GLM-5.2
+        stays the default primitive; this is selection, not a unified-API veneer.
+
+        For live GLM calls pass ``glm=GLMConfig(api_key=...)``; for live DeepSeek
+        pass ``deepseek=DeepSeekConfig(api_key=...)`` (or rely on the DEEPSEEK_API_KEY
+        env var). Omit both for the deterministic dry-run (CI / tests / first install).
         """
         cfg = config or IngestConfig()
-        if glm is not None:
-            # Mirror the GLM api_key into the ingest config so the
-            # IngestEngine / ShardPlan budget stays consistent. The
-            # window stays at the IngestConfig default (1_000_000 for
-            # GLM-5.2); GLM-5.2's 1M is the primitive, DeepSeek's smaller
-            # window is handled by passing a custom IngestConfig.window.
-            cfg.api_key = glm.api_key
-        client = GLMClient(glm or GLMConfig(api_key=cfg.api_key))
+        if model == "deepseek":
+            ds_cfg = deepseek or DeepSeekConfig(
+                api_key=os.environ.get("DEEPSEEK_API_KEY", "")
+            )
+            # Recompute the budget window against DeepSeek V4's 128k context.
+            cfg.window = DEEPSEEK_CONTEXT_WINDOW
+            if ds_cfg.api_key:
+                cfg.api_key = ds_cfg.api_key
+            client: ModelClient = DeepSeekClient(ds_cfg)
+        else:
+            glm_cfg = glm or GLMConfig(api_key=cfg.api_key)
+            if glm is not None:
+                # Mirror the GLM api_key into the ingest config so the budget
+                # stays consistent. Window stays at the IngestConfig default
+                # (1_000_000 for GLM-5.2).
+                cfg.api_key = glm_cfg.api_key
+            client = GLMClient(glm_cfg)
         return cls(root, config=cfg, model=client)
 
     # -- core operations ------------------------------------------------
 
     def _build_plan(self) -> tuple[ShardPlan, str]:
-        """Scan + plan + render prompt. Returns (plan, prompt)."""
+        """Scan + plan + render prompt. Returns (plan, prompt).
+
+        Persists the plan's ingested file hashes to the CacheStore and records an
+        ingest run — use this for genuine ingests (``ingest`` / ``query`` / the
+        CLI ``init``). Read-only cost/files queries MUST use
+        :meth:`_build_plan_readonly` so they do not pollute the cache or the
+        ingest_runs ledger (v0.2 fix: fix-cost-path-cache-pollution).
+        """
         chunks = scan_repo(self.root, self.config)
         budget = TokenBudget(
             window=self.config.window, headroom=self.config.headroom
@@ -187,6 +217,23 @@ class CachePlan:
             cache_hits=plan.files - len(plan.delta),
             cache_misses=len(plan.delta),
         )
+        prompt = plan.to_prompt(self.config)
+        return plan, prompt
+
+    def _build_plan_readonly(self) -> tuple[ShardPlan, str]:
+        """Scan + plan + render prompt WITHOUT persisting or recording a run.
+
+        The delta is still computed against the cache (so the plan reflects what
+        *would* be re-ingested), but no ``cache.put`` / ``record_run`` happens.
+        Use this for ``cost_delta`` / ``files_vs_cap`` so a read-only cost query
+        cannot inflate the ``cache_hit`` metric on a subsequent ``init`` (v0.2
+        fix). The ingest path (``_build_plan``) keeps persisting.
+        """
+        chunks = scan_repo(self.root, self.config)
+        budget = TokenBudget(
+            window=self.config.window, headroom=self.config.headroom
+        )
+        plan = build_shard_plan(chunks, budget, cache=self.cache)
         prompt = plan.to_prompt(self.config)
         return plan, prompt
 
@@ -261,8 +308,11 @@ class CachePlan:
         Uses the planned repo's total tokens as the input-token count
         and the ShardPlan's stable_prefix tokens as the cached-prefix
         portion (DeepSeek V4's prefix-cache discount applies there).
+
+        Read-only: does NOT persist cache keys or record a run (v0.2 fix),
+        so a ``ctxfeed cost`` query cannot pollute the cache_hit metric.
         """
-        plan, _prompt = self._build_plan()
+        plan, _prompt = self._build_plan_readonly()
         return compute_cost_delta(
             input_tokens=plan.total_tokens,
             output_tokens=output_tokens,
@@ -270,14 +320,44 @@ class CachePlan:
         )
 
     def files_vs_cap(self) -> dict:
-        """The first "star-able" number: files accepted vs ChatGPT's cap."""
-        plan, _prompt = self._build_plan()
+        """The first "star-able" number: files accepted vs ChatGPT's cap.
+
+        Read-only: does NOT persist cache keys or record a run (v0.2 fix).
+        """
+        plan, _prompt = self._build_plan_readonly()
         return {
             "files_accepted": plan.files,
             "chatgpt_cap": CHATGPT_FILE_CAP,
             "ratio": round(plan.files / CHATGPT_FILE_CAP, 1) if CHATGPT_FILE_CAP else 0.0,
             "over_cap": plan.files > CHATGPT_FILE_CAP,
         }
+
+    def cost_and_files(
+        self,
+        *,
+        output_tokens: int = 1024,
+    ) -> tuple[CostDelta, dict]:
+        """Compute both cost-delta and files-vs-cap from ONE non-persisting pass.
+
+        v0.2 fix: the CLI ``cost`` command and the MCP ``cost_delta`` tool used
+        to call ``cost_delta()`` then ``files_vs_cap()``, each rebuilding (scan
+        + tokenize + hash + centrality-rank) the plan and persisting cache keys
+        twice. This single-pass read-only method computes both numbers from one
+        plan without mutating the cache.
+        """
+        plan, _prompt = self._build_plan_readonly()
+        delta = compute_cost_delta(
+            input_tokens=plan.total_tokens,
+            output_tokens=output_tokens,
+            cached_prefix_tokens=plan.stable_prefix_tokens,
+        )
+        fv = {
+            "files_accepted": plan.files,
+            "chatgpt_cap": CHATGPT_FILE_CAP,
+            "ratio": round(plan.files / CHATGPT_FILE_CAP, 1) if CHATGPT_FILE_CAP else 0.0,
+            "over_cap": plan.files > CHATGPT_FILE_CAP,
+        }
+        return delta, fv
 
     def close(self) -> None:
         self.cache.close()

@@ -13,6 +13,7 @@ without touching ingest ordering logic.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
 
@@ -29,8 +30,43 @@ __all__ = [
     "ModelClient",
     "ModelConfig",
     "ModelResponse",
+    "ModelAPIError",
     "BaseChatClient",
 ]
+
+
+class ModelAPIError(Exception):
+    """Structured error raised when a live model API call fails terminally.
+
+    Carries the HTTP ``status_code`` (when known), the ``model`` name, and a
+    short excerpt of the response ``body`` so higher layers (CachePlan, the MCP
+    server) can return a structured tool error instead of a raw httpx traceback.
+    Transient retryable statuses (429/503/504) are retried with backoff inside
+    :meth:`BaseChatClient._call` before this is raised.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        model: str = "",
+        body: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.model = model
+        self.body = body
+
+    def __str__(self) -> str:  # pragma: no cover — trivial
+        return super().__str__()
+
+
+# HTTP statuses that are retried with exponential backoff before giving up.
+_RETRY_STATUSES = {429, 503, 504}
+# Max attempts (1 initial + 2 retries) and backoff base (seconds).
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE = 0.5
 
 
 @dataclass
@@ -225,15 +261,71 @@ class BaseChatClient:
             "temperature": 0.1,
             "stream": False,
         }
-        with httpx.Client(timeout=cfg.timeout) as client:
-            resp = client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-        usage = data.get("usage", {}) or {}
-        return ModelResponse(
-            content=data["choices"][0]["message"]["content"],
+        # Bounded retry on transient statuses (429/503/504); raise a structured
+        # ModelAPIError on terminal failure so higher layers (CachePlan, the MCP
+        # server) return a structured tool error instead of a raw httpx traceback.
+        last_status: int | None = None
+        last_body: str = ""
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                with httpx.Client(timeout=cfg.timeout) as client:
+                    resp = client.post(url, json=payload, headers=headers)
+            except httpx.HTTPError as exc:
+                # Network-level error: retry until the budget is spent, then surface.
+                if attempt < _MAX_ATTEMPTS:
+                    time.sleep(_BACKOFF_BASE * (2 ** (attempt - 1)))
+                    continue
+                raise ModelAPIError(
+                    f"{cfg.model} API request failed after {_MAX_ATTEMPTS} "
+                    f"attempts: {exc}",
+                    model=cfg.model,
+                ) from exc
+            last_status = resp.status_code
+            if resp.status_code in _RETRY_STATUSES:
+                last_body = (resp.text or "")[:300]
+                if attempt < _MAX_ATTEMPTS:
+                    time.sleep(_BACKOFF_BASE * (2 ** (attempt - 1)))
+                    continue
+                # Retried transient status kept failing — exhausted the budget.
+                raise ModelAPIError(
+                    f"{cfg.model} API error {resp.status_code} after "
+                    f"{_MAX_ATTEMPTS} attempts: {last_body[:120]}",
+                    status_code=resp.status_code,
+                    model=cfg.model,
+                    body=last_body,
+                )
+            if resp.status_code >= 400:
+                # Terminal non-retryable error (e.g. 400/401/403/404).
+                last_body = (resp.text or "")[:300]
+                raise ModelAPIError(
+                    f"{cfg.model} API error {resp.status_code}: {last_body[:120]}",
+                    status_code=resp.status_code,
+                    model=cfg.model,
+                    body=last_body,
+                )
+            try:
+                data = resp.json()
+            except Exception as exc:
+                last_body = (resp.text or "")[:300]
+                raise ModelAPIError(
+                    f"{cfg.model} returned non-JSON 200 response: {last_body[:120]}",
+                    status_code=resp.status_code,
+                    model=cfg.model,
+                    body=last_body,
+                ) from exc
+            usage = data.get("usage", {}) or {}
+            return ModelResponse(
+                content=data["choices"][0]["message"]["content"],
+                model=cfg.model,
+                prompt_tokens=int(usage.get("prompt_tokens", 0)),
+                completion_tokens=int(usage.get("completion_tokens", 0)),
+                dry_run=False,
+            )
+        # Defensive: loop exited without returning (should not happen, but fail
+        # closed with a structured error rather than returning None).
+        raise ModelAPIError(
+            f"{cfg.model} API call exhausted retries (last status {last_status})",
+            status_code=last_status,
             model=cfg.model,
-            prompt_tokens=int(usage.get("prompt_tokens", 0)),
-            completion_tokens=int(usage.get("completion_tokens", 0)),
-            dry_run=False,
+            body=last_body,
         )
