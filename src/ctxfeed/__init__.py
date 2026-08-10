@@ -6,4 +6,4 @@ ingest ordering, so coding agents like Claude Code and Cursor query
 40-file cap.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

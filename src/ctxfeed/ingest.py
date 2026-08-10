@@ -11,9 +11,13 @@ FileHash) that later milestones build on, and provides a self-contained
 IngestEngine that the benchmark (polish stage) calls to run the kill-check.
 
 Design notes:
-- Self-contained: no imports from other ctxfeed modules (they arrive in
-  m2/polish). All core types live here so shard.py / cache_plan.py can
-  import from ingest.py without circular deps.
+- Mostly self-contained: the core data types (FileChunk, TokenBudget,
+  FileHash, CacheStore) live here so shard.py / cache_plan.py can import
+  from ingest.py without circular deps. The one ctxfeed import is
+  ``ModelAPIError`` (and retry constants) from :mod:`ctxfeed.models` —
+  added in v0.3 (fix-ingest-engine-no-retry) so the m1 ``_call_glm`` path
+  surfaces the same structured error as the m2/m3 ``BaseChatClient`` path.
+  ``.models`` does not import ``.ingest``, so there is no cycle.
 - GLM-5.2 specific: the window, API endpoint, and model name are tuned
   for GLM-5.2's 1M context. DeepSeek V4 is a cost-fallback only (m2+).
 - Dry-run mode: when no API key is set, the engine returns mock responses
@@ -52,6 +56,13 @@ try:
     _PATHSPEC_AVAILABLE = True
 except ImportError:  # pragma: no cover — pathspec is a declared dep as of v0.2
     _PATHSPEC_AVAILABLE = False
+
+
+# v0.3 (fix-ingest-engine-no-retry): the m1 IngestEngine path reuses the
+# structured ModelAPIError + the retry budget from .models so a live failure
+# in _call_glm surfaces the same error type as the m2/m3 BaseChatClient path.
+# Safe at module level: .models does not import .ingest (no import cycle).
+from .models import ModelAPIError, _RETRY_STATUSES, _MAX_ATTEMPTS, _BACKOFF_BASE
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +454,14 @@ def _call_glm(
 
     In dry-run mode (no API key or ``dry_run=True``), returns a deterministic
     mock response so the pipeline can be tested without network access.
+
+    v0.3 fix (fix-ingest-engine-no-retry): this mirrors the retry + structured-
+    error contract of :meth:`ctxfeed.models.BaseChatClient._call` — transient
+    statuses (429/503/504) are retried with exponential backoff, and a terminal
+    failure raises a structured :class:`~ctxfeed.models.ModelAPIError`
+    (status_code + body excerpt + model name) instead of a raw
+    ``httpx.HTTPStatusError``. This makes the m1 ``IngestEngine`` path match the
+    m2/m3 ``BaseChatClient`` path (notably a clear 401 message for a bad key).
     """
     if config.effective_dry_run():
         return _dry_run_response(prompt, query)
@@ -493,11 +512,68 @@ def _call_glm(
         "stream": False,
     }
 
-    with httpx.Client(timeout=config.api_timeout) as client:
-        resp = client.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+    # Bounded retry on transient statuses (429/503/504); raise a structured
+    # ModelAPIError on terminal failure so the IngestEngine path matches
+    # BaseChatClient._call — higher layers get a clear 401 message for a bad
+    # key and retries on rate-limiting / 5xx instead of a raw httpx traceback.
+    last_status: int | None = None
+    last_body: str = ""
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            with httpx.Client(timeout=config.api_timeout) as client:
+                resp = client.post(url, json=payload, headers=headers)
+        except httpx.HTTPError as exc:
+            # Network-level error: retry until the budget is spent, then surface.
+            if attempt < _MAX_ATTEMPTS:
+                time.sleep(_BACKOFF_BASE * (2 ** (attempt - 1)))
+                continue
+            raise ModelAPIError(
+                f"{config.model} API request failed after {_MAX_ATTEMPTS} "
+                f"attempts: {exc}",
+                model=config.model,
+            ) from exc
+        last_status = resp.status_code
+        if resp.status_code in _RETRY_STATUSES:
+            last_body = (resp.text or "")[:300]
+            if attempt < _MAX_ATTEMPTS:
+                time.sleep(_BACKOFF_BASE * (2 ** (attempt - 1)))
+                continue
+            # Retried transient status kept failing — exhausted the budget.
+            raise ModelAPIError(
+                f"{config.model} API error {resp.status_code} after "
+                f"{_MAX_ATTEMPTS} attempts: {last_body[:120]}",
+                status_code=resp.status_code,
+                model=config.model,
+                body=last_body,
+            )
+        if resp.status_code >= 400:
+            # Terminal non-retryable error (e.g. 400/401/403/404).
+            last_body = (resp.text or "")[:300]
+            raise ModelAPIError(
+                f"{config.model} API error {resp.status_code}: {last_body[:120]}",
+                status_code=resp.status_code,
+                model=config.model,
+                body=last_body,
+            )
+        try:
+            data = resp.json()
+        except Exception as exc:
+            last_body = (resp.text or "")[:300]
+            raise ModelAPIError(
+                f"{config.model} returned non-JSON 200 response: {last_body[:120]}",
+                status_code=resp.status_code,
+                model=config.model,
+                body=last_body,
+            ) from exc
         return data["choices"][0]["message"]["content"]
+    # Defensive: loop exited without returning (should not happen, but fail
+    # closed with a structured error rather than returning None).
+    raise ModelAPIError(
+        f"{config.model} API call exhausted retries (last status {last_status})",
+        status_code=last_status,
+        model=config.model,
+        body=last_body,
+    )
 
 
 def _dry_run_response(prompt: str, query: str | None) -> str:
@@ -522,6 +598,24 @@ def _dry_run_response(prompt: str, query: str | None) -> str:
 # ---------------------------------------------------------------------------
 # Cache store (SQLite) — prefix-cache reuse bookkeeping
 # ---------------------------------------------------------------------------
+
+def _resolve_cache_db(cache_db: str, root: Path | str) -> str:
+    """Resolve ``cache_db`` to an absolute path anchored to ``root`` when relative.
+
+    v0.3 fix (fix-cache-db-cwd-relative): the ``IngestConfig.cache_db`` default
+    is the relative path ``.ctxfeed/cache.db``. Left relative,
+    :class:`CacheStore` opens it relative to the *process CWD*, so two repos
+    ingested from the same CWD share one cache file — content-equal files
+    (identical README, lockfiles, vendored code) falsely register as cache
+    hits, inflating the user-facing ``cache_hit`` metric. Anchoring a relative
+    ``cache_db`` to the repo root gives each repo its own cache. Absolute
+    paths pass through unchanged.
+    """
+    p = Path(cache_db)
+    if p.is_absolute():
+        return cache_db
+    return str(Path(root).resolve() / p)
+
 
 class CacheStore:
     """SQLite-backed store for cache-key bookkeeping.
@@ -764,6 +858,22 @@ class IngestEngine:
         self.config = config or IngestConfig()
         self.cache = CacheStore(self.config.cache_db)
 
+    def _ensure_cache_anchored(self, root: Path) -> None:
+        """Re-anchor a relative ``cache_db`` to ``root`` (v0.3 fix).
+
+        Idempotent: when ``cache_db`` is already absolute (the common case —
+        tests pass an explicit tmp path), this is a no-op. When it is relative
+        (the ``.ctxfeed/cache.db`` default), the cache is re-opened anchored
+        to the repo root so two repos ingested from the same process CWD do
+        not share one cache file — which would let content-equal files
+        (README, lockfiles) falsely register as cache hits.
+        """
+        resolved = _resolve_cache_db(self.config.cache_db, root)
+        if resolved != self.config.cache_db:
+            self.cache.close()
+            self.config.cache_db = resolved
+            self.cache = CacheStore(resolved)
+
     def _build_budget(self) -> TokenBudget:
         return TokenBudget(
             window=self.config.window, headroom=self.config.headroom
@@ -798,6 +908,8 @@ class IngestEngine:
         if not root.is_dir():
             raise FileNotFoundError(f"Repo root not found: {root}")
 
+        # v0.3 fix: anchor a relative cache_db to the repo root before use.
+        self._ensure_cache_anchored(root)
         ordered, skipped, all_chunks = self._scan_and_order(root)
 
         if not ordered:
@@ -886,6 +998,8 @@ class IngestEngine:
         if not root.is_dir():
             raise FileNotFoundError(f"Repo root not found: {root}")
 
+        # v0.3 fix: anchor a relative cache_db to the repo root before use.
+        self._ensure_cache_anchored(root)
         chunks = scan_repo(root, self.config)
         return [
             {

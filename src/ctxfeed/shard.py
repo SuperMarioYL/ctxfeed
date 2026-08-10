@@ -48,6 +48,7 @@ from .ingest import (
     FileChunk,
     IngestConfig,
     TokenBudget,
+    _resolve_cache_db,
     format_ingest_prompt,
     scan_repo,
 )
@@ -372,6 +373,21 @@ class ShardPlanBuilder:
         self.config = config or IngestConfig()
         self.cache = CacheStore(self.config.cache_db)
 
+    def _ensure_cache_anchored(self, root: Path) -> None:
+        """Re-anchor a relative ``cache_db`` to ``root`` (v0.3 fix).
+
+        Idempotent: a no-op when ``cache_db`` is already absolute (the common
+        test case). When relative (the ``.ctxfeed/cache.db`` default), the
+        cache is re-opened anchored to the repo root so two repos built from
+        the same process CWD don't share one cache (false cache hits).
+        Mirrors :meth:`ctxfeed.ingest.IngestEngine._ensure_cache_anchored`.
+        """
+        resolved = _resolve_cache_db(self.config.cache_db, root)
+        if resolved != self.config.cache_db:
+            self.cache.close()
+            self.config.cache_db = resolved
+            self.cache = CacheStore(resolved)
+
     def _build_budget(self) -> TokenBudget:
         return TokenBudget(
             window=self.config.window, headroom=self.config.headroom
@@ -398,6 +414,8 @@ class ShardPlanBuilder:
         root_path = Path(root).resolve()
         if not root_path.is_dir():
             raise FileNotFoundError(f"Repo root not found: {root_path}")
+        # v0.3 fix: anchor a relative cache_db to the repo root before use.
+        self._ensure_cache_anchored(root_path)
         chunks = scan_repo(root_path, self.config)
         budget = self._build_budget()
         plan = build_shard_plan(

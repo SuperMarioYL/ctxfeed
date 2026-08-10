@@ -59,14 +59,25 @@ from .models.glm import GLMConfig
 # A single console for the whole CLI — consistent theme across subcommands.
 _console: "Optional[Console]" = None
 
-# v0.2: selectable cost-fallback model. CTXFEED_MODEL env overrides the default
-# (glm) so `ctxfeed mcp` (run as an MCP server) can target DeepSeek V4 without a
-# CLI flag. Valid values: "glm" (GLM-5.2 1M, default) | "deepseek" (V4 128k).
+# v0.2: selectable cost-fallback model. The backing model is resolved with the
+# precedence: --model flag > CTXFEED_MODEL env > "glm" default. The CLI --model
+# defaults to None (falsy) so that omitting the flag lets _resolve_model fall
+# through to CTXFEED_MODEL — this lets `ctxfeed mcp` (run as an MCP server)
+# target DeepSeek V4 without a CLI flag. Valid values: "glm" (GLM-5.2 1M,
+# default) | "deepseek" (V4 128k).
 _VALID_MODELS = ("glm", "deepseek")
 
 
 def _resolve_model(model: Optional[str]) -> str:
-    """Resolve the backing model from --model or CTXFEED_MODEL env."""
+    """Resolve the backing model: --model flag, else CTXFEED_MODEL env, else glm.
+
+    The CLI commands pass ``model=None`` when ``--model`` is omitted (a falsy
+    default), so the ``model or`` short-circuit falls through to the
+    ``CTXFEED_MODEL`` env var (then the "glm" default). A truthy --model flag
+    always wins. This is the v0.3 fix for fix-ctxfeed-model-env-shadowed: the
+    v0.2 typer default was the truthy string "glm", which short-circuited the
+    env var end-to-end (CLI -> run_stdio -> build_server -> _resolve_model).
+    """
     resolved = (model or os.environ.get("CTXFEED_MODEL", "") or "glm").strip().lower()
     if resolved not in _VALID_MODELS:
         raise SystemExit(
@@ -147,9 +158,9 @@ def _build_app():
         repo: Optional[str] = typer.Option(
             None, "--repo", "-r", help="Repo root (default: cwd)."
         ),
-        model: str = typer.Option(
-            "glm", "--model", "-m",
-            help="Backing model: glm (GLM-5.2 1M, default) | deepseek (V4 128k cost-fallback).",
+        model: Optional[str] = typer.Option(
+            None, "--model", "-m",
+            help="Backing model: glm (GLM-5.2 1M, default) | deepseek (V4 128k cost-fallback). Falls back to the CTXFEED_MODEL env var when omitted.",
         ),
         quiet: bool = typer.Option(
             False, "--quiet", "-q", help="Only print the summary line."
@@ -209,9 +220,9 @@ def _build_app():
         repo: Optional[str] = typer.Option(
             None, "--repo", "-r", help="Repo root (default: cwd)."
         ),
-        model: str = typer.Option(
-            "glm", "--model", "-m",
-            help="Backing model: glm (default) | deepseek.",
+        model: Optional[str] = typer.Option(
+            None, "--model", "-m",
+            help="Backing model: glm (default) | deepseek. Falls back to CTXFEED_MODEL env when omitted.",
         ),
     ) -> None:
         """Show what a file or dir would add to the ShardPlan.
@@ -272,9 +283,9 @@ def _build_app():
         repo: Optional[str] = typer.Option(
             None, "--repo", "-r", help="Repo root (default: cwd)."
         ),
-        model: str = typer.Option(
-            "glm", "--model", "-m",
-            help="Backing model: glm (default) | deepseek.",
+        model: Optional[str] = typer.Option(
+            None, "--model", "-m",
+            help="Backing model: glm (default) | deepseek. Falls back to CTXFEED_MODEL env when omitted.",
         ),
         output_tokens: int = typer.Option(
             1024, "--output-tokens", "-o",
@@ -303,9 +314,9 @@ def _build_app():
             None, "--repo", "-r",
             help="Repo root (also settable via CTXFEED_REPO_ROOT env).",
         ),
-        model: str = typer.Option(
-            "glm", "--model", "-m",
-            help="Backing model: glm (default) | deepseek (also settable via CTXFEED_MODEL).",
+        model: Optional[str] = typer.Option(
+            None, "--model", "-m",
+            help="Backing model: glm (default) | deepseek (also settable via CTXFEED_MODEL env). Omitting --model honors CTXFEED_MODEL.",
         ),
     ) -> None:
         """Run the stdio MCP server (for ``claude mcp add``)."""

@@ -30,7 +30,7 @@ Design notes:
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Optional
 
@@ -43,6 +43,7 @@ from .ingest import (
     IngestResult,
     QueryResult,
     TokenBudget,
+    _resolve_cache_db,
     format_ingest_prompt,
     scan_repo,
 )
@@ -136,6 +137,16 @@ class CachePlan:
         if not self.root.is_dir():
             raise FileNotFoundError(f"Repo root not found: {self.root}")
         self.config = config or IngestConfig()
+        # v0.3 fix (fix-cache-db-cwd-relative): anchor a relative cache_db to
+        # the repo root so two repos run from the same process CWD don't share
+        # one cache file — which would let content-equal files (README,
+        # lockfiles, vendored code) falsely register as cache hits and inflate
+        # the user-facing cache_hit metric. replace() keeps a caller-shared
+        # config object untouched (the anchored path lives on self.config only).
+        self.config = replace(
+            self.config,
+            cache_db=_resolve_cache_db(self.config.cache_db, self.root),
+        )
         # The model client defaults to GLM-5.2 dry-run. The IngestConfig's
         # api_key/window flow into the ShardPlan budget; the model client's
         # api_key governs the actual API call. When the caller passes a

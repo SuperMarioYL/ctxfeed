@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-11
+
+### Fixed
+
+- **fix-ctxfeed-model-env-shadowed**: `CTXFEED_MODEL` now actually selects the backing model when `--model` is omitted. Every CLI command (`init` / `add` / `cost` / `mcp`) declared `model: str = typer.Option("glm", ...)`, so typer always passed the truthy string `"glm"` when `--model` was omitted, and `_resolve_model`'s `model or env` short-circuited to `"glm"` — the env var was never read end-to-end (CLI → `run_stdio` → `build_server` → `_resolve_model`). The four typer defaults are now `None` (falsy), so `_resolve_model` falls through to `CTXFEED_MODEL` (then `"glm"`). This unblocks the documented DeepSeek-via-env selection on the primary MCP surface.
+- **fix-cache-db-cwd-relative**: the SQLite `cache_db` default (`.ctxfeed/cache.db`) is now anchored to the repo root, not the process CWD. Previously `CacheStore` opened it relative to the CWD, so two repos ingested from the same CWD shared one cache — content-equal files (identical README, lockfiles, vendored code) falsely registered as cache hits, inflating the user-facing `cache_hit` metric. `CachePlan`, `IngestEngine`, and `ShardPlanBuilder` now resolve a relative `cache_db` to an absolute path under the repo root; absolute paths pass through unchanged.
+- **fix-ingest-engine-no-retry**: `IngestEngine._call_glm` (the m1 repo-QA path) now retries transient failures (429/503/504) with exponential backoff and raises a structured `ModelAPIError` (status_code + body excerpt + model name) on terminal failure, mirroring `BaseChatClient._call` (the m2/m3 path). Previously it did a single `httpx.Client.post` + `resp.raise_for_status()`, surfacing a raw `httpx.HTTPStatusError` on a 401 and skipping retry on 429/5xx — contradicting the v0.2 changelog's "structured error ... clear 401 message for a bad key". The lower-level API now matches the higher-level one.
+
+### Changed
+
+- Bumped version to 0.3.0 (`__version__`, `VERSION`, `pyproject.toml`).
+- `tests/test_v030.py` covering all three fixes: env-driven model selection (incl. an end-to-end `ctxfeed init` CLI run), per-repo cache anchoring (two CWDs don't collide), and the IngestEngine retry + `ModelAPIError` contract (401 terminal, 429/5xx retried, budget exhausted).
+
 ## [0.2.0] - 2026-08-03
 
 ### Fixed
