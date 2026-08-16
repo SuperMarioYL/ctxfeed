@@ -426,11 +426,17 @@ class ShardPlanBuilder:
                 self.cache.put(
                     chunk.hash, chunk.path, chunk.tokens, chunk.layer
                 )
+            # v0.4 fix (fix-cache-hits-chunk-vs-hash): compute hit/miss at the
+            # CHUNK level (not hash level) so the ingest_runs ledger agrees with
+            # ShardPlan.cache_hit_rate. plan.files counts CHUNKS while
+            # plan.delta is a set of HASHES; ``files - len(delta)`` over-reports
+            # hits when chunks share a hash (duplicate-content files).
+            cached = sum(1 for c in plan.ordered_chunks() if c.hash not in plan.delta)
             self.cache.record_run(
                 files=plan.files,
                 tokens=plan.total_tokens,
-                cache_hits=plan.files - len(plan.delta),
-                cache_misses=len(plan.delta),
+                cache_hits=cached,
+                cache_misses=plan.files - cached,
             )
         return plan
 

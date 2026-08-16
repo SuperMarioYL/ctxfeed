@@ -69,6 +69,31 @@ _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 0.5
 
 
+def _extract_message_content(data: Any) -> str | None:
+    """Return the assistant message ``content`` from a parsed 200 body, or None.
+
+    v0.4 (fix-glm-response-choices-unguarded): shared shape guard for the
+    ``data["choices"][0]["message"]["content"]`` access used by both
+    :meth:`BaseChatClient._call` and :func:`ctxfeed.ingest._call_glm`. Returns
+    None for any malformed / content-filtered body — missing ``choices``
+    (would-be ``KeyError``), an empty ``choices`` list (would-be
+    ``IndexError``), or a ``null`` / missing ``content`` (silent ``None`` that
+    crashes downstream callers like ``benchmark/repo_qa.py``'s
+    ``answer[:200]`` slicing) — so the caller raises a structured
+    :class:`ModelAPIError` instead of letting a raw exception escape or
+    returning a silent None. (The ``usage`` field was already ``.get()``-
+    guarded one line above; this completes the partial guard.) Safe at the
+    module root: ingest imports FROM here (one direction, no cycle).
+    """
+    choices = data.get("choices")
+    content: str | None = None
+    if isinstance(choices, list) and choices:
+        msg = choices[0].get("message") or {}
+        if isinstance(msg, dict):
+            content = msg.get("content")
+    return content
+
+
 @dataclass
 class ChatMessage:
     """A single chat-completions message."""
@@ -313,9 +338,24 @@ class BaseChatClient:
                     model=cfg.model,
                     body=last_body,
                 ) from exc
+            # v0.4 fix (fix-glm-response-choices-unguarded): a 200 with a
+            # content-filtered / malformed body (empty choices, null content,
+            # or missing choices) used to escape as a raw KeyError / IndexError
+            # or a silent None. Validate the choices[0].message.content shape
+            # before indexing; raise a structured ModelAPIError (with the body
+            # context) on a malformed 200, mirroring the terminal-error branch.
+            content = _extract_message_content(data)
+            if content is None:
+                last_body = (resp.text or "")[:300]
+                raise ModelAPIError(
+                    f"{cfg.model} returned 200 with no message content: {last_body[:120]}",
+                    status_code=resp.status_code,
+                    model=cfg.model,
+                    body=last_body,
+                )
             usage = data.get("usage", {}) or {}
             return ModelResponse(
-                content=data["choices"][0]["message"]["content"],
+                content=content,
                 model=cfg.model,
                 prompt_tokens=int(usage.get("prompt_tokens", 0)),
                 completion_tokens=int(usage.get("completion_tokens", 0)),

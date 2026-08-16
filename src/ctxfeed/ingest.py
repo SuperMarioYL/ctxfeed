@@ -62,7 +62,13 @@ except ImportError:  # pragma: no cover — pathspec is a declared dep as of v0.
 # structured ModelAPIError + the retry budget from .models so a live failure
 # in _call_glm surfaces the same error type as the m2/m3 BaseChatClient path.
 # Safe at module level: .models does not import .ingest (no import cycle).
-from .models import ModelAPIError, _RETRY_STATUSES, _MAX_ATTEMPTS, _BACKOFF_BASE
+from .models import (
+    ModelAPIError,
+    _RETRY_STATUSES,
+    _MAX_ATTEMPTS,
+    _BACKOFF_BASE,
+    _extract_message_content,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +213,18 @@ def count_tokens(text: str) -> int:
 
     Uses tiktoken's cl100k_base encoding (close to GLM-5.2's tokenizer).
     Falls back to ~4 chars/token if tiktoken is missing.
+
+    v0.4 fix (fix-count-tokens-empty-string): an empty string is 0 tokens on
+    BOTH the tiktoken path (``len(enc.encode("")) == 0``) and the char-fallback
+    path. The fallback used to be ``max(1, len(text) // 4)``, which returns 1
+    for ``""`` — masked wherever tiktoken is importable (all local tests pass)
+    but firing on the tiktoken-absent / air-gap path that is ctxfeed's CN
+    target segment, where it breaks ``test_count_tokens_positive`` and any
+    caller that special-cases a 0-token file. Guard the empty case up front so
+    the ``>= 1`` floor only applies to non-empty input.
     """
+    if not text:
+        return 0
     enc = _get_encoder()
     if enc is not None:
         return len(enc.encode(text))
@@ -565,7 +582,26 @@ def _call_glm(
                 model=config.model,
                 body=last_body,
             ) from exc
-        return data["choices"][0]["message"]["content"]
+        # v0.4 fix (fix-glm-response-choices-unguarded): a 200 with a
+        # content-filtered / malformed body — {"choices": []} (IndexError),
+        # {"choices":[{"message":{"content":null}}]} (silent None that crashes
+        # downstream slicing), or a body missing "choices" (KeyError) — used to
+        # escape as a raw exception or a silent None instead of the structured
+        # ModelAPIError v0.2/v0.3 established for terminal failures. Validate
+        # the choices[0].message.content shape before indexing; raise a
+        # structured ModelAPIError (with the body context) on a malformed 200,
+        # mirroring the terminal-error branch. (The usage field is already
+        # .get()-guarded in BaseChatClient._call; this completes the guard.)
+        content = _extract_message_content(data)
+        if content is None:
+            last_body = (resp.text or "")[:300]
+            raise ModelAPIError(
+                f"{config.model} returned 200 with no message content: {last_body[:120]}",
+                status_code=resp.status_code,
+                model=config.model,
+                body=last_body,
+            )
+        return content
     # Defensive: loop exited without returning (should not happen, but fail
     # closed with a structured error rather than returning None).
     raise ModelAPIError(
