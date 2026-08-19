@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ctxfeed"
-version = "0.3.0"
+version = "0.5.0"
 description = "Local MCP project-context backend that shards a whole repo into GLM-5.2's 1M-token window"
 readme = "README.md"
 license = "MIT"

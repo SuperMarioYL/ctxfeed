@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-19
+
+### Fixed
+
+- **fix-stale-version-strings-v040**: the v0.4.0 release shipped but its version surfaces still read `0.3.0` — `__version__` (`src/ctxfeed/__init__.py`), `VERSION`, and `pyproject.toml` `version` were never bumped on the `v0.4.0` release commit (`fd659a3`), so `ctxfeed --version`, `pip show ctxfeed`, and the MCP server all misreported as `0.3.0`. Bumped all three surfaces to `0.5.0`; backfilled the missing `[0.4.0]` CHANGELOG section; and added `tests/test_version.py` asserting `__version__ == VERSION == pyproject version` to prevent a future repeat.
+
+## [0.4.0] - 2026-08-16
+
+### Fixed
+
+- **fix-count-tokens-empty-string**: `count_tokens("")` returned `max(1, 0) == 1` on the tiktoken-absent char-fallback path (`max(1, len(text) // 4)`), contradicting `tests/test_ingest.py::test_count_tokens_positive` (which asserts 0). The primary tiktoken path was already correct, so the bug was masked wherever tiktoken is importable and only fired on the char-fallback path hit in air-gapped / no-net environments — precisely ctxfeed's CN air-gap target segment. Now guards `if not text: return 0` before the floor.
+- **fix-cache-hits-chunk-vs-hash**: `cache_hits` / `cache_misses` in `CachePlan._build_plan` (`cache_plan.py`) and `ShardPlanBuilder.build` (`shard.py`) were computed hash-level (`plan.files - len(plan.delta)`), but `plan.files` counts CHUNKS while `plan.delta` is a set of HASHES — duplicate-content files (empty `__init__.py`, vendored copies, identical lockfiles) inflated `cache_hit`. Now computed chunk-level (`sum(1 for c in plan.ordered_chunks() if c.hash not in plan.delta)`), matching the existing correct `ShardPlan.cache_hit_rate`.
+- **fix-glm-response-choices-unguarded**: `IngestEngine._call_glm` (`ingest.py`) and `BaseChatClient._call` (`models/__init__.py`) indexed `data["choices"][0]["message"]["content"]` with no shape guard on a 200, so a content-filtered or malformed response (`{"choices": []}`, `{"choices": [{"message": {"content": null}}]}`, or a missing-`choices` body) escaped as IndexError / KeyError / silent None instead of the structured `ModelAPIError`. Now validates the shape via a shared `_extract_message_content` helper and raises `ModelAPIError` on a malformed 200, mirroring the terminal-error branch.
+
 ## [0.3.0] - 2026-08-11
 
 ### Fixed
