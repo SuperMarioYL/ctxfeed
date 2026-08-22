@@ -63,5 +63,11 @@
     "sub": { "zh": "一条命令装好本地 MCP 后端，绕过文件上限，主模型不可用还能切备用。", "en": "One command installs the local MCP backend — past the file cap, with a backup model one switch away." },
     "button": { "zh": "uvx ctxfeed init", "en": "uvx ctxfeed init" }
   },
-  "footer": { "tag": { "zh": "本地 · MIT · 一次往返 · 数据不离本机", "en": "Local · MIT · One round-trip · Data stays on your machine" } }
+  "footer": { "tag": { "zh": "本地 · MIT · 一次往返 · 数据不离本机", "en": "Local · MIT · One round-trip · Data stays on your machine" } },
+  "meta": {
+    "source_version": "v0.6.0",
+    "content_version": "v0.6.0",
+    "generated_at": "2026-08-23",
+    "web_factory_ref": "v1.1"
+  }
 }
