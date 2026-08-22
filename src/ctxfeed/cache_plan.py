@@ -206,9 +206,20 @@ class CachePlan:
     def _build_plan(self) -> tuple[ShardPlan, str]:
         """Scan + plan + render prompt. Returns (plan, prompt).
 
-        Persists the plan's ingested file hashes to the CacheStore and records an
-        ingest run — use this for genuine ingests (``ingest`` / ``query`` / the
-        CLI ``init``). Read-only cost/files queries MUST use
+        v0.6 fix (fix-cache-polluted-on-failed-model-call): this method no
+        longer persists cache keys or records an ingest run. Persisting is
+        gated on a successful model call — :meth:`ingest` / :meth:`query`
+        call :meth:`_persist_plan` only AFTER ``self.model.ingest`` /
+        ``self.model.query`` returns, mirroring
+        :meth:`ctxfeed.ingest.IngestEngine.ingest_repo`'s persist-after-call
+        ordering (ingest.py:970-977). A live call that fails AFTER this method
+        (a bad key surfacing as a terminal 401, or a 429/503/504 exhausting
+        the retry budget) must not warm the cache or log an ingest_run —
+        otherwise the next call computes delta against the warmed cache and
+        reports a false ``cache_hit_rate=100%`` (CLI ``init`` cache-hit row +
+        the MCP ``list_files`` 'cached' flag) with no real ingest having
+        succeeded. :meth:`plan` (no model call) keeps persisting inline via
+        :meth:`_persist_plan`. Read-only cost/files queries MUST use
         :meth:`_build_plan_readonly` so they do not pollute the cache or the
         ingest_runs ledger (v0.2 fix: fix-cost-path-cache-pollution).
         """
@@ -217,6 +228,18 @@ class CachePlan:
             window=self.config.window, headroom=self.config.headroom
         )
         plan = build_shard_plan(chunks, budget, cache=self.cache)
+        prompt = plan.to_prompt(self.config)
+        return plan, prompt
+
+    def _persist_plan(self, plan: ShardPlan) -> None:
+        """Persist the plan's ingested file hashes + record an ingest run.
+
+        v0.6 fix (fix-cache-polluted-on-failed-model-call): factored out of
+        :meth:`_build_plan` so callers can gate persistence on a successful
+        model call (see :meth:`ingest` / :meth:`query`). :meth:`plan` (no model
+        call) calls this inline. Same persist semantics as before — same cache
+        keys, same ``record_run`` shape; only the ORDERING moved.
+        """
         # Persist cache keys so the next plan's delta shrinks.
         for chunk in plan.ordered_chunks():
             self.cache.put(
@@ -234,8 +257,6 @@ class CachePlan:
             cache_hits=cached,
             cache_misses=plan.files - cached,
         )
-        prompt = plan.to_prompt(self.config)
-        return plan, prompt
 
     def _build_plan_readonly(self) -> tuple[ShardPlan, str]:
         """Scan + plan + render prompt WITHOUT persisting or recording a run.
@@ -262,6 +283,9 @@ class CachePlan:
         server's ``list_files`` calls a lighter variant (:meth:`list_files`).
         """
         plan, prompt = self._build_plan()
+        # No model call to gate on (dry-run/read-only plan pass), so persist
+        # inline — preserves the existing plan() contract (v0.6 fix).
+        self._persist_plan(plan)
         return PlanResult(
             plan=plan,
             prompt=prompt,
@@ -271,12 +295,16 @@ class CachePlan:
 
     def ingest(self) -> PlanResult:
         """Plan + call the model's ingest (context → ack)."""
-        result = self.plan()
-        resp: ModelResponse = self.model.ingest(result.prompt)
+        plan, prompt = self._build_plan()
+        resp: ModelResponse = self.model.ingest(prompt)
+        # v0.6 fix: persist ONLY after the model call succeeds — a failed
+        # ingest (401 / exhausted retry budget) must not warm the cache or
+        # record a run, mirroring IngestEngine.ingest_repo (ingest.py:970-977).
+        self._persist_plan(plan)
         # Surface the model's ack through the result for the CLI.
         return PlanResult(
-            plan=result.plan,
-            prompt=result.prompt,
+            plan=plan,
+            prompt=prompt,
             model=resp.model,
             dry_run=resp.dry_run,
         )
@@ -290,6 +318,9 @@ class CachePlan:
         """
         plan, prompt = self._build_plan()
         resp = self.model.query(prompt, question)
+        # v0.6 fix: persist ONLY after the model call succeeds — a failed
+        # query must not warm the cache or record a run (see :meth:`ingest`).
+        self._persist_plan(plan)
         return QueryResult(
             question=question,
             answer=resp.content,

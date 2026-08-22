@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-23
+
+### Fixed
+
+- **fix-cache-polluted-on-failed-model-call**: `CachePlan._build_plan` (`cache_plan.py`) ran the cache writes (`self.cache.put` + `self.cache.record_run`) BEFORE the model call that `ingest()` (`self.model.ingest`) and `query()` (`self.model.query`) make, so a live call that failed AFTER persist — a bad/expired key surfacing as a terminal 401 `ModelAPIError`, or a 429/503/504 exhausting the retry budget — still warmed the cache and logged an `ingest_run`. The very next `ingest`/`query` then computed delta against the warmed cache and reported `cache_hit_rate=100%` (the CLI `init` cache-hit row and the MCP `list_files` 'cached' flag) with no real ingest having succeeded. The persist logic is now factored into a `_persist_plan(plan)` helper called only AFTER `self.model.ingest`/`self.model.query` returns successfully, mirroring `IngestEngine.ingest_repo`'s persist-after-call ordering (`ingest.py`); `plan()` (no model call) keeps persisting inline. Same persist semantics (same keys, same `record_run` shape) — only the ordering moved. A failed model call now leaves the cache and the `ingest_runs` ledger untouched, so the next call's `cache_hit_rate` stays honest.
+
 ## [0.5.0] - 2026-08-19
 
 ### Fixed
