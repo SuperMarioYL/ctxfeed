@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-31
+
+### Fixed
+
+- **fix-mcp-query-repo-unhandled-model-error**: the MCP `query_repo` tool (`mcp_server.py`) called `cp.query(question)` with no `try/except` around `ModelAPIError`, so a terminal model failure — a bad/expired GLM key surfacing as a terminal 401, or a 429/503/504 exhausting the retry budget — propagated uncaught through the FastMCP tool boundary. The structured `ModelAPIError` (status_code + model name + body excerpt) that the v0.2/v0.3 model-layer fixes (`fix-api-transient-errors`, `fix-ingest-engine-no-retry`) deliberately built was discarded at the tool boundary; the agent got a generic framework error instead of a readable "GLM-5.2 API error 401: invalid api key" string. This contradicted the v0.2 changelog ("the MCP query_repo tool returns a structured error instead of a raw httpx traceback") and the tool's own docstring. `query_repo` now catches `ModelAPIError` and returns `[ctxfeed] error: <model-layer message>` (which carries the model + status + body excerpt), so a terminal failure surfaces as a structured tool result instead of a raw exception. No change to the retry/backoff logic (that already lives correctly in the model layer) — only the tool-boundary error shape.
+- **fix-init-redundant-double-scan**: the CLI `init` command (`cli.py`) called `cp.ingest()` (which scans+tokenizes+hashes+centrality-ranks the whole repo via `_build_plan` → `scan_repo` + `build_shard_plan`) and then `cp.files_vs_cap()` (which via `_build_plan_readonly` re-scanned+re-tokenized+re-hashed+re-ranked the WHOLE repo a second time) solely to read a file count `result.files` already held. On a 1000-file repo this doubled the scan+hash work on every `ctxfeed init`. The v0.2 fix (`fix-cost-path-cache-pollution`) already established the single-pass `cost_and_files()` pattern for the `cost` path; `init` was missed. `init` now derives the files-vs-cap dict inline from `result.files` + the `CHATGPT_FILE_CAP` constant — identical dict, one scan instead of two, and no re-scan race (the two scans could previously diverge if files changed between them).
+
 ## [0.6.0] - 2026-08-23
 
 ### Fixed

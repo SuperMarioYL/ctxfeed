@@ -187,7 +187,19 @@ def _build_app():
             )
         with _for_repo(root, resolved_model) as cp:
             result = cp.ingest()
-            fv = cp.files_vs_cap()
+        # v0.7 fix (fix-init-redundant-double-scan): derive files-vs-cap from
+        # the already-built plan (result.files) instead of calling
+        # cp.files_vs_cap(), which re-scanned+tokenized+hashed+ranked the whole
+        # repo a second time for a file count the first pass already produced.
+        # Mirrors the v0.2 single-pass cost_and_files() fix; identical dict,
+        # one scan instead of two (no re-scan race).
+        files_accepted = result.files
+        fv = {
+            "files_accepted": files_accepted,
+            "chatgpt_cap": CHATGPT_FILE_CAP,
+            "ratio": round(files_accepted / CHATGPT_FILE_CAP, 1) if CHATGPT_FILE_CAP else 0.0,
+            "over_cap": files_accepted > CHATGPT_FILE_CAP,
+        }
         if quiet:
             print(result.summary())
             return

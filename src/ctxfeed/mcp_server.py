@@ -40,6 +40,7 @@ from typing import Any, Optional
 
 from .cache_plan import CachePlan
 from .ingest import IngestConfig
+from .models import ModelAPIError
 from .models.deepseek import DeepSeekConfig
 from .models.glm import GLMConfig
 
@@ -140,7 +141,18 @@ def build_server(repo_root: Path | str | None = None, model: Optional[str] = Non
                 defaults to the server's ``--model`` / ``CTXFEED_MODEL``).
         """
         with _plan(repo, model) as cp:
-            qr = cp.query(question)
+            try:
+                qr = cp.query(question)
+            except ModelAPIError as exc:
+                # v0.7 fix (fix-mcp-query-repo-unhandled-model-error): a
+                # terminal model failure (a bad/expired key surfacing as a
+                # terminal 401, or a 429/503/504 exhausting the retry budget)
+                # must surface as a structured tool-result string, not
+                # propagate uncaught through the FastMCP boundary. str(exc)
+                # carries the model layer's message (model + status + body
+                # excerpt) that fix-api-transient-errors /
+                # fix-ingest-engine-no-retry deliberately built.
+                return f"[ctxfeed] error: {exc}"
         return (
             f"[ctxfeed] {qr.files_in_context} files in context "
             f"({qr.tokens_in_context:,} tokens)\n\n{qr.answer}"
