@@ -105,6 +105,10 @@
           "alt": {
             "zh": "完整脚本创建两份临时文件，连续构建三次计划。结果中的 cached_fraction 是本地文件哈希复用比例，不是模型缓存命中或实测费用。",
             "en": "The complete script creates two temporary files and builds three plans. cached_fraction is the fraction of locally known file hashes, not model-cache telemetry or measured billing."
+          },
+          "mobile": {
+            "light": "/assets/presentation/process-mobile-light.svg",
+            "dark": "/assets/presentation/process-mobile-dark.svg"
           }
         }
       },
@@ -123,6 +127,10 @@
           "alt": {
             "zh": "ingest 扫描并计数文件，shard 按预算和稳定顺序构建计划，CachePlan 将文件哈希写到仓库自己的 SQLite 缓存。CLI 和 MCP 共用该路径，模型适配器在查询时发送组装后的上下文。delta 是本地变化账本，不代表仅发送变化内容，也不是服务端 prefix cache 遥测。",
             "en": "ingest scans and counts files; shard builds a budgeted, ordered plan. CachePlan stores file hashes in repository-scoped SQLite. CLI and MCP share this path, and model adapters send assembled context on queries. The delta is local bookkeeping: it does not mean only changed content is transmitted or measure provider prefix-cache behavior."
+          },
+          "mobile": {
+            "light": "/assets/presentation/architecture-mobile-light.svg",
+            "dark": "/assets/presentation/architecture-mobile-dark.svg"
           }
         }
       },
@@ -141,6 +149,10 @@
           "alt": {
             "zh": "CLI 提供 init、add、cost、mcp。MCP 的 list_files 展示文件与缓存标记，query_repo 提交问题，cost_delta 按仓库内的静态费率估算。GLM 与 DeepSeek 是可选适配器，不会自动完成模型供应商间的运行时故障切换。",
             "en": "The CLI exposes init, add, cost and mcp. MCP list_files shows files and cache markers, query_repo submits a question and cost_delta estimates from repository-defined rates. GLM and DeepSeek are selectable adapters, not automatic runtime failover."
+          },
+          "mobile": {
+            "light": "/assets/presentation/integrations-mobile-light.svg",
+            "dark": "/assets/presentation/integrations-mobile-dark.svg"
           }
         }
       }
