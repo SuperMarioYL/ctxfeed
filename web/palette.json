@@ -1,0 +1,38 @@
+{
+  "mode": "auto",
+  "id": "56e6af-6ad4e7-acf6bf-b11c3fecaba2",
+  "identity": "https://github.com/supermarioyl/ctxfeed",
+  "primary": "#56e6af",
+  "secondary": "#6ad4e7",
+  "highlight": "#acf6bf",
+  "dark": {
+    "bg": "#050c10",
+    "panel": "#0c171c",
+    "code": "#0a1719",
+    "ink": "#eefdf2",
+    "muted": "#95b9b9",
+    "line": "#173c33",
+    "primary": "#56e6af",
+    "secondary": "#6ad4e7",
+    "highlight": "#acf6bf",
+    "accent": "#56e6af",
+    "buttonStart": "#328465",
+    "buttonEnd": "#407f8b",
+    "buttonText": "#ffffff"
+  },
+  "light": {
+    "bg": "#f9fefc",
+    "panel": "#f7fefb",
+    "code": "#f3fdf9",
+    "ink": "#132a28",
+    "muted": "#557a7c",
+    "line": "#cbf7e6",
+    "primary": "#308163",
+    "secondary": "#3e7d88",
+    "highlight": "#577c61",
+    "accent": "#308163",
+    "buttonStart": "#328465",
+    "buttonEnd": "#407f8b",
+    "buttonText": "#ffffff"
+  }
+}

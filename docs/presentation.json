@@ -1,0 +1,78 @@
+{
+  "name": "ctxfeed",
+  "tagline": "Give repository context an inspectable plan.",
+  "architecture": {
+    "title": "ctxfeed / data flow",
+    "nodes": [
+      {
+        "title": "Repository scanner",
+        "detail": "Files / ignore patterns"
+      },
+      {
+        "title": "ShardPlan",
+        "detail": "Stable prefix / body / budget"
+      },
+      {
+        "title": "CachePlan and SQLite",
+        "detail": "Local content-hash history"
+      },
+      {
+        "title": "CLI / MCP / adapters",
+        "detail": "Plan / query / estimates"
+      }
+    ],
+    "edges": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        3
+      ]
+    ]
+  },
+  "process": {
+    "title": "ctxfeed / example workflow",
+    "steps": [
+      {
+        "title": "Create two files",
+        "detail": "README.md and app.py"
+      },
+      {
+        "title": "Build again",
+        "detail": "Unchanged delta is empty"
+      },
+      {
+        "title": "Edit app.py",
+        "detail": "One changed hash"
+      }
+    ],
+    "result": "Local changed hashes: 2 on first plan, 0 unchanged, 1 after the edit."
+  },
+  "integrations": {
+    "title": "ctxfeed / supported routes",
+    "items": [
+      {
+        "title": "Local repositories",
+        "detail": "Text files / ignore rules"
+      },
+      {
+        "title": "SQLite",
+        "detail": "Per-repository hash records"
+      },
+      {
+        "title": "MCP stdio",
+        "detail": "query_repo / list_files / cost_delta"
+      },
+      {
+        "title": "GLM / DeepSeek",
+        "detail": "Configured API adapters"
+      }
+    ]
+  }
+}

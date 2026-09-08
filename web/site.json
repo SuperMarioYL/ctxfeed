@@ -1,73 +1,236 @@
 {
-  "schema": 1,
+  "schema": 3,
   "name": "ctxfeed",
   "github": "https://github.com/SuperMarioYL/ctxfeed",
   "host": "ctxfeed.lei6393.com",
-  "lang": { "primary": "zh", "toggle": true },
-  "accent": ["#0071E3", "#0A84FF", "#5E5CE6"],
+  "palette": "auto",
+  "lang": {
+    "primary": "zh",
+    "toggle": true
+  },
+  "meta": {
+    "visual_profile": "neon-particle",
+    "content_version": "0.7.0",
+    "demo_source": "docs/demo-results.json"
+  },
   "hero": {
-    "eyebrow": { "zh": "本地 · 无账号 · 单命令", "en": "Local · No account · One command" },
+    "eyebrow": {
+      "zh": "按 token 预算组织仓库文件，跟踪内容变化，并通过 CLI 或 MCP 提供项目上下文。",
+      "en": "Organize repository files within a token budget, track content changes and expose project context through CLI or MCP."
+    },
     "headline": {
-      "zh": "把整个仓库\n塞进 coding agent 的上下文",
-      "en": "Feed your whole repo\ninto your coding agent"
+      "zh": "给仓库上下文一个可检查的计划。",
+      "en": "Give repository context an inspectable plan."
     },
     "sub": {
-      "zh": "按缓存感知顺序把 1000+ 文件切片塞进百万 token 长上下文窗口，一次 MCP 往返拿到答案——绕过 ChatGPT 的 40 文件上限，单次查询成本低于旗舰模型，数据不离本机；主模型不可用时一条命令切到备用，成本底线不破。",
-      "en": "Shard 1000+ files in cache-aware order into a 1M-token long-context window so coding agents fetch the whole repo in one MCP round-trip — past ChatGPT's 40-file cap, below flagship-model per-query cost, with data staying on your machine. If the primary model is down, switch to a backup with one command and the cost floor holds."
+      "zh": "按 token 预算组织仓库文件，跟踪内容变化，并通过 CLI 或 MCP 提供项目上下文。",
+      "en": "Organize repository files within a token budget, track content changes and expose project context through CLI or MCP."
     },
-    "command": "uvx ctxfeed init",
-    "cta": { "zh": "开始", "en": "Get started" },
-    "ctaGithub": { "zh": "GitHub", "en": "GitHub" },
-    "scroll": { "zh": "向下看", "en": "Scroll" }
+    "href": "#quickstart",
+    "cta": {
+      "zh": "运行示例",
+      "en": "Run the example"
+    },
+    "ctaGithub": {
+      "zh": "查看源码",
+      "en": "View source"
+    }
+  },
+  "scene": {
+    "kind": "neon-graph",
+    "caption": {
+      "zh": "图示展示组件关系；实际输出见下方示例。",
+      "en": "An illustrative component scene; recorded output appears below."
+    },
+    "fallback": "/assets/presentation/scene-dark.svg",
+    "fallbackLight": "/assets/presentation/scene-light.svg"
   },
   "advantages": [
     {
-      "title": { "zh": "一次调用查 1000+ 文件", "en": "Query 1000+ files in one call" },
-      "body": {
-        "zh": "不再被 40 文件上限卡死——整个仓库一次塞进上下文，agent 看全貌再答。",
-        "en": "Stop hitting the 40-file wall — the whole repo goes into context in one shot so the agent sees the full picture before answering."
+      "title": {
+        "zh": "先看输入",
+        "en": "Inspect the input"
       },
-      "chips": ["› 1000+ 文件 / 单次", "› 25× 文件上限"]
+      "body": {
+        "zh": "文件与层次可直接查看。",
+        "en": "Files and layers are inspectable."
+      }
     },
     {
-      "title": { "zh": "只重刷改动文件", "en": "Re-ingest only what changed" },
-      "body": {
-        "zh": "缓存感知的摄入顺序：依赖清单、README、类型定义先入，之后只重摄入改动文件，不重算整个仓库；尊重 .gitignore，生成物不占上下文。",
-        "en": "A cache-aware ingest order: deps, README and type defs go in first, then only changed files are re-ingested — never the whole repo twice. It honors .gitignore, so generated files never waste the context window."
+      "title": {
+        "zh": "稳定组织",
+        "en": "Stable ordering"
       },
-      "chips": ["› 只重刷改动", "› 尊重 .gitignore"]
+      "body": {
+        "zh": "稳定前缀与正文分别组织。",
+        "en": "Stable prefix and body are organized separately."
+      }
     },
     {
-      "title": { "zh": "主模型不可用？切备用", "en": "Primary down? Switch to backup" },
-      "body": {
-        "zh": "一条命令切到备用长上下文模型，成本底线不破；偶发限流自动重试，失败给清晰报错而非直接崩溃。",
-        "en": "Switch to a backup long-context model with one command and the cost floor holds; transient rate-limits retry automatically and a failure returns a clear error instead of a crash."
+      "title": {
+        "zh": "跨调用跟踪",
+        "en": "Track across calls"
       },
-      "chips": ["› 一条命令切备用", "› 限流自动重试"]
-    },
-    {
-      "title": { "zh": "单次查询更省", "en": "Cheaper per query" },
       "body": {
-        "zh": "百万 token 长上下文模型撑起全仓库查询，单次成本低于旗舰模型；附成本对比仪表盘，数字始终诚实。",
-        "en": "A 1M-token long-context model backs a whole-repo query at a fraction of a flagship model's per-query cost — with a cost-delta dashboard whose numbers stay honest."
-      },
-      "chips": ["› 1M token 窗口", "› 成本对比仪表盘"]
+        "zh": "SQLite 保存本地变化依据。",
+        "en": "SQLite preserves local change history."
+      }
     }
   ],
-  "scene": {
-    "kind": "hub-nodes",
-    "nodes": ["repo files", "ctxfeed", "1M-context model", "fallback model", "Claude Code", "Cursor", "Codex"]
+  "story": {
+    "intro": {
+      "title": {
+        "zh": "解决什么问题",
+        "en": "The task it solves"
+      },
+      "body": {
+        "zh": "把很多文件交给模型之前，先要知道哪些文件会被纳入、顺序是什么、相对上次修改了哪些内容。ctxfeed 用 ShardPlan 表达这些选择，保留稳定前缀、正文和变化集合，方便检查一次查询实际组织了什么。",
+        "en": "Before sending many files to a model, inspect which files fit, their ordering and what changed since the last plan. ctxfeed represents those choices in a ShardPlan containing a stable prefix, repository body and change set."
+      }
+    },
+    "sections": [
+      {
+        "title": {
+          "zh": "从输入到结果",
+          "en": "From input to result"
+        },
+        "body": {
+          "zh": "完整脚本创建两份临时文件，连续构建三次计划。结果中的 cached_fraction 是本地文件哈希复用比例，不是模型缓存命中或实测费用。",
+          "en": "The complete script creates two temporary files and builds three plans. cached_fraction is the fraction of locally known file hashes, not model-cache telemetry or measured billing."
+        },
+        "image": {
+          "light": "/assets/presentation/process-light.svg",
+          "dark": "/assets/presentation/process-dark.svg",
+          "alt": {
+            "zh": "完整脚本创建两份临时文件，连续构建三次计划。结果中的 cached_fraction 是本地文件哈希复用比例，不是模型缓存命中或实测费用。",
+            "en": "The complete script creates two temporary files and builds three plans. cached_fraction is the fraction of locally known file hashes, not model-cache telemetry or measured billing."
+          }
+        }
+      },
+      {
+        "title": {
+          "zh": "工作原理",
+          "en": "How it works"
+        },
+        "body": {
+          "zh": "ingest 扫描并计数文件，shard 按预算和稳定顺序构建计划，CachePlan 将文件哈希写到仓库自己的 SQLite 缓存。CLI 和 MCP 共用该路径，模型适配器在查询时发送组装后的上下文。delta 是本地变化账本，不代表仅发送变化内容，也不是服务端 prefix cache 遥测。",
+          "en": "ingest scans and counts files; shard builds a budgeted, ordered plan. CachePlan stores file hashes in repository-scoped SQLite. CLI and MCP share this path, and model adapters send assembled context on queries. The delta is local bookkeeping: it does not mean only changed content is transmitted or measure provider prefix-cache behavior."
+        },
+        "image": {
+          "light": "/assets/presentation/architecture-light.svg",
+          "dark": "/assets/presentation/architecture-dark.svg",
+          "alt": {
+            "zh": "ingest 扫描并计数文件，shard 按预算和稳定顺序构建计划，CachePlan 将文件哈希写到仓库自己的 SQLite 缓存。CLI 和 MCP 共用该路径，模型适配器在查询时发送组装后的上下文。delta 是本地变化账本，不代表仅发送变化内容，也不是服务端 prefix cache 遥测。",
+            "en": "ingest scans and counts files; shard builds a budgeted, ordered plan. CachePlan stores file hashes in repository-scoped SQLite. CLI and MCP share this path, and model adapters send assembled context on queries. The delta is local bookkeeping: it does not mean only changed content is transmitted or measure provider prefix-cache behavior."
+          }
+        }
+      },
+      {
+        "title": {
+          "zh": "能力与接入",
+          "en": "Capabilities and integration"
+        },
+        "body": {
+          "zh": "CLI 提供 init、add、cost、mcp。MCP 的 list_files 展示文件与缓存标记，query_repo 提交问题，cost_delta 按仓库内的静态费率估算。GLM 与 DeepSeek 是可选适配器，不会自动完成模型供应商间的运行时故障切换。",
+          "en": "The CLI exposes init, add, cost and mcp. MCP list_files shows files and cache markers, query_repo submits a question and cost_delta estimates from repository-defined rates. GLM and DeepSeek are selectable adapters, not automatic runtime failover."
+        },
+        "image": {
+          "light": "/assets/presentation/integrations-light.svg",
+          "dark": "/assets/presentation/integrations-dark.svg",
+          "alt": {
+            "zh": "CLI 提供 init、add、cost、mcp。MCP 的 list_files 展示文件与缓存标记，query_repo 提交问题，cost_delta 按仓库内的静态费率估算。GLM 与 DeepSeek 是可选适配器，不会自动完成模型供应商间的运行时故障切换。",
+            "en": "The CLI exposes init, add, cost and mcp. MCP list_files shows files and cache markers, query_repo submits a question and cost_delta estimates from repository-defined rates. GLM and DeepSeek are selectable adapters, not automatic runtime failover."
+          }
+        }
+      }
+    ],
+    "details": [
+      {
+        "title": {
+          "zh": "使用方式",
+          "en": "Usage"
+        },
+        "body": {
+          "zh": "CLI 提供 init、add、cost、mcp。MCP 的 list_files 展示文件与缓存标记，query_repo 提交问题，cost_delta 按仓库内的静态费率估算。GLM 与 DeepSeek 是可选适配器，不会自动完成模型供应商间的运行时故障切换。",
+          "en": "The CLI exposes init, add, cost and mcp. MCP list_files shows files and cache markers, query_repo submits a question and cost_delta estimates from repository-defined rates. GLM and DeepSeek are selectable adapters, not automatic runtime failover."
+        }
+      },
+      {
+        "title": {
+          "zh": "配置",
+          "en": "Configuration"
+        },
+        "body": {
+          "zh": "`--model` 优先于 `CTXFEED_MODEL`，可选 glm 或 deepseek。GLM 读取 `ZHIPU_API_KEY`/`GLM_API_KEY`，DeepSeek 读取 `DEEPSEEK_API_KEY`。IngestConfig 管理 window、headroom、max_file_bytes 和 cache_db；默认缓存为 `.ctxfeed/cache.db`。供应商模型名、窗口和费率是适配器中的配置假设，应按实际账户核对。",
+          "en": "`--model` overrides `CTXFEED_MODEL`; values are glm or deepseek. GLM reads `ZHIPU_API_KEY`/`GLM_API_KEY`; DeepSeek reads `DEEPSEEK_API_KEY`. IngestConfig owns window, headroom, max_file_bytes and cache_db, defaulting to `.ctxfeed/cache.db`. Adapter model names, windows and rates are configuration assumptions to check against the actual account."
+        }
+      }
+    ]
   },
-  "cta": {
-    "headline": { "zh": "让 agent 看见整个仓库", "en": "Let your agent see the whole repo" },
-    "sub": { "zh": "一条命令装好本地 MCP 后端，绕过文件上限，主模型不可用还能切备用。", "en": "One command installs the local MCP backend — past the file cap, with a backup model one switch away." },
-    "button": { "zh": "uvx ctxfeed init", "en": "uvx ctxfeed init" }
+  "demo": {
+    "title": {
+      "zh": "实际运行结果",
+      "en": "Actual demo output"
+    },
+    "note": {
+      "zh": "完整脚本创建两份临时文件，连续构建三次计划。结果中的 cached_fraction 是本地文件哈希复用比例，不是模型缓存命中或实测费用。",
+      "en": "The complete script creates two temporary files and builds three plans. cached_fraction is the fraction of locally known file hashes, not model-cache telemetry or measured billing."
+    },
+    "source": "https://github.com/SuperMarioYL/ctxfeed/blob/main/docs/demo-results.json",
+    "steps": [
+      {
+        "label": {
+          "zh": "查看三次计划",
+          "en": "Inspect three plans"
+        },
+        "body": {
+          "zh": "首次、未修改、修改一次的变化集合分别是 2、0、1。",
+          "en": "The first, unchanged and edited plans contain 2, 0 and 1 changed hashes."
+        },
+        "command": ".venv/bin/python examples/presentation-demo.py",
+        "output": "[\n  {\n    \"stage\": \"first\",\n    \"files\": 2,\n    \"delta_hashes\": 2,\n    \"cached_fraction\": 0.0,\n    \"stable_prefix\": [\n      \"README.md\"\n    ]\n  },\n  {\n    \"stage\": \"unchanged\",\n    \"files\": 2,\n    \"delta_hashes\": 0,\n    \"cached_fraction\": 1.0,\n    \"stable_prefix\": [\n      \"README.md\"\n    ]\n  },\n  {\n    \"stage\": \"edited\",\n    \"files\": 2,\n    \"delta_hashes\": 1,\n    \"cached_fraction\": 0.5,\n    \"stable_prefix\": [\n      \"README.md\"\n    ]\n  }\n]\n",
+        "image": "/assets/presentation/demo-0-light.svg",
+        "imageDark": "/assets/presentation/demo-0-dark.svg"
+      }
+    ]
   },
-  "footer": { "tag": { "zh": "本地 · MIT · 一次往返 · 数据不离本机", "en": "Local · MIT · One round-trip · Data stays on your machine" } },
-  "meta": {
-    "source_version": "v0.7.0",
-    "content_version": "v0.7.0",
-    "generated_at": "2026-08-31",
-    "web_factory_ref": "v1.1"
+  "quickstart": {
+    "title": {
+      "zh": "从完整输入开始",
+      "en": "Start with complete input"
+    },
+    "body": {
+      "zh": "需要 Python 3.12+ 与 uv。演示只构建本地计划，无需 API key；首次 tokenizer 使用可能需要缓存其编码文件。",
+      "en": "Requires Python 3.12+ and uv. The example only builds local plans and needs no API key; first tokenizer use may populate encoding-file caches."
+    },
+    "steps": [
+      {
+        "title": {
+          "zh": "安装",
+          "en": "Install"
+        },
+        "code": "git clone https://github.com/SuperMarioYL/ctxfeed.git\ncd ctxfeed\nuv venv --python 3.12\nuv pip install --python .venv/bin/python -e ."
+      },
+      {
+        "title": {
+          "zh": "运行自带示例",
+          "en": "Run the supplied example"
+        },
+        "code": ".venv/bin/python examples/presentation-demo.py"
+      }
+    ]
+  },
+  "limitations": [
+    {
+      "zh": "文件可能因忽略规则、大小或预算被跳过；不能保证任意仓库完整进入上下文。",
+      "en": "Files can be skipped due to ignore rules, size or budget; arbitrary repositories are not guaranteed to fit."
+    },
+    {
+      "zh": "dry-run 答案是内置模拟结果，cost 是静态估算；本示例没有调用模型。",
+      "en": "Dry-run answers are built-in simulations and cost is a static estimate; this example calls no model."
+    }
+  ],
+  "footer": {
+    "tag": "0.7.0 · Python 3.12+ · MIT"
   }
 }

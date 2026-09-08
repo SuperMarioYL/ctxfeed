@@ -1,150 +1,138 @@
-<div align="right"><sub>[English](./README.en.md) | <b>简体中文</b></sub></div>
+[English](README.en.md) | **简体中文**
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/hero-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/hero-light.svg">
-  <img src="./assets/hero-light.svg" width="880" alt="ctxfeed — 把整个仓库塞进 GLM-5.2 的 1M token 窗口">
+  <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="assets/presentation/hero-mobile-dark.svg">
+  <source media="(max-width: 640px)" srcset="assets/presentation/hero-mobile-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/presentation/hero-dark.svg">
+  <img src="assets/presentation/hero-light.svg" width="1000" alt="按 token 预算组织仓库文件，跟踪内容变化，并通过 CLI 或 MCP 提供项目上下文。">
 </picture>
 
-<p><sub>面向 Agent 的本地 MCP 项目上下文后端：把整个仓库按缓存感知顺序切片塞进 GLM-5.2 的 100 万 token 窗口，Claude Code / Cursor / Codex 一次调用查 1000+ 文件，绕过 ChatGPT 的 40 文件上限，单次查询成本低于 Opus。</sub></p>
+**按 token 预算组织仓库文件，跟踪内容变化，并通过 CLI 或 MCP 提供项目上下文。**
 
-<p align="center">
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license"></a>
-  <a href="https://github.com/SuperMarioYL/ctxfeed/releases"><img src="https://img.shields.io/github/v/release/SuperMarioYL/ctxfeed?color=blue" alt="release"></a>
-  <img src="https://img.shields.io/github/actions/workflow/status/SuperMarioYL/ctxfeed/ci.yml?branch=main&label=CI" alt="CI">
-  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="python">
-  <img src="https://img.shields.io/badge/Agent-ready-5E5CE6" alt="Agent-ready">
-</p>
+`v0.7.0` · `Python 3.12+` · [MIT](LICENSE)
 
-**一句钩子**：ChatGPT 把项目卡在 40 个文件、Claude 的 200k 窗口按 token 计费烧到撞限额——ctxfeed 把整个 1000+ 文件仓库塞进 GLM-5.2 的 1M 上下文喂给 coding agent，一次 MCP 往返拿到答案。
+[Website](https://ctxfeed.lei6393.com) · [Demo record](docs/demo-results.json)
 
-<h2><img src="https://api.iconify.design/tabler:topology-star-3.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> 架构</h2>
+## 为什么使用
+
+把很多文件交给模型之前，先要知道哪些文件会被纳入、顺序是什么、相对上次修改了哪些内容。ctxfeed 用 ShardPlan 表达这些选择，保留稳定前缀、正文和变化集合，方便检查一次查询实际组织了什么。
+
+## 架构
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/atlas-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/atlas-light.svg">
-  <img src="./assets/atlas-light.svg" width="880" alt="架构：repo files → ctxfeed ingest / ShardPlan builder → GLM-5.2 1M ctx；cache-key store (sqlite) → MCP server (stdio) → Claude Code / Cursor / Codex">
+  <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="assets/presentation/architecture-mobile-dark.svg">
+  <source media="(max-width: 640px)" srcset="assets/presentation/architecture-mobile-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/presentation/architecture-dark.svg">
+  <img src="assets/presentation/architecture-light.svg" width="1000" alt="ingest 扫描并计数文件，shard 按预算和稳定顺序构建计划，CachePlan 将文件哈希写到仓库自己的 SQLite 缓存。CLI 和 MCP 共用该路径，模型适配器在查询时发送组装后的上下文。delta 是本地变化账本，不代表仅发送变化内容，也不是服务端 prefix cache 遥测。">
 </picture>
 
-核心原语是 **ShardPlan**——缓存感知的文件摄入顺序，让 ctxfeed 不只是"调 GLM 带文件"。`stable_prefix`（依赖清单、README、类型定义先入）+ `delta`（只重摄入改动文件）是可拥有的部分：一个确定性的、prefix-cache 对齐的摄入计划，原始 GLM/DeepSeek API 不提供。没有它，判词说产品会退化成"成本套利 RAG 包装"。
+ingest 扫描并计数文件，shard 按预算和稳定顺序构建计划，CachePlan 将文件哈希写到仓库自己的 SQLite 缓存。CLI 和 MCP 共用该路径，模型适配器在查询时发送组装后的上下文。delta 是本地变化账本，不代表仅发送变化内容，也不是服务端 prefix cache 遥测。
 
-## 为什么是现在
+源码入口：[src/ctxfeed/cli.py](src/ctxfeed/cli.py) · [src/ctxfeed/cache_plan.py](src/ctxfeed/cache_plan.py) · [src/ctxfeed/ingest.py](src/ctxfeed/ingest.py) · [src/ctxfeed/shard.py](src/ctxfeed/shard.py) · [src/ctxfeed/mcp_server.py](src/ctxfeed/mcp_server.py) · [src/ctxfeed/models/glm.py](src/ctxfeed/models/glm.py) · [src/ctxfeed/models/deepseek.py](src/ctxfeed/models/deepseek.py)
 
-GLM-5.2 的 1M MIT 许可上下文窗口是 2026 年的已发布实物（[r/LocalLLaMA](https://www.reddit.com/r/LocalLLaMA/comments/1uwe542/) 引述"Kimi K3 in the next few hours. DeepSeek V4 GA later in the week"——多家 CN 长上下文模型同周落地），MCP 给了 coding agent 一个标准摄入缝。ctxfeed 把这波供给侧长上下文变成 Agent 能直接消费的项目上下文后端——[langgenius/dify](https://github.com/langgenius/dify) 这类国产 origin 的 agent 平台生态正是它的落地点：dify 用户撞到上下文上限时，ctxfeed 是那个喂全仓库的 MCP 后端。
+## 安装
 
-<h2><img src="https://api.iconify.design/tabler:rocket.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> 快速开始</h2>
-
-```bash
-uvx ctxfeed init            # 扫描仓库、构建 ShardPlan、摄入（默认 dry-run，无需 key）
-uvx ctxfeed cost            # 单次查询 token 成本对比 Opus
-```
-
-进 live 模式（真实 GLM-5.2 调用）：
+需要 Python 3.12+ 与 uv。演示只构建本地计划，无需 API key；首次 tokenizer 使用可能需要缓存其编码文件。
 
 ```bash
-export ZHIPU_API_KEY=glm-...
-uvx ctxfeed init            # 真 GLM-5.2 摄入
+git clone https://github.com/SuperMarioYL/ctxfeed.git
+cd ctxfeed
+uv venv --python 3.12
+uv pip install --python .venv/bin/python -e .
 ```
 
-<details><summary>sample output（dry-run）</summary>
+## 快速开始
 
-```
-╭──────────────────────────────────────────────────────────╮
-│ ctxfeed init — /path/to/repo                            │
-│ model=GLM-5.2 (1M ctx)  mode=dry-run                   │
-╰──────────────────────────────────────────────────────────╯
-┌─────────────────────┬────────────────────────────┐
-│ files accepted      │ 1024  (vs ChatGPT's 40)    │
-│ stable_prefix       │ 12  (3_421t)               │
-│ repo_body           │ 1012  (118_733t)           │
-│ tokens              │ 122,154 / 1,000,000 (12.2%)│
-│ cache hit           │ 0%                         │
-│ delta (new/changed) │ 1024                       │
-└─────────────────────┴────────────────────────────┘
-╭──────────────────────────────────────────────────────────╮
-│ 1024 files accepted  (25.6x ChatGPT's cap, PAST)        │
-╰──────────────────────────────────────────────────────────╯
-```
-</details>
-
-<h2><img src="https://api.iconify.design/tabler:terminal-2.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> 用法</h2>
+完整脚本创建两份临时文件，连续构建三次计划。结果中的 cached_fraction 是本地文件哈希复用比例，不是模型缓存命中或实测费用。
 
 ```bash
-# 查看某文件/目录加进 plan 后的 layer + token 数（只读，不改缓存）
-uvx ctxfeed add ./src/auth.py
-
-# 起 stdio MCP server，给 Claude Code / Cursor / Codex 消费
-uvx ctxfeed mcp --repo /path/to/repo
-
-# 在 Claude Code 里注册：
-claude mcp add ctxfeed -- uvx ctxfeed mcp --repo /path/to/repo
+.venv/bin/python examples/presentation-demo.py
 ```
 
-注册后，在 Claude Code 里问"auth middleware 在哪？"——ctxfeed 把全仓库摄入 GLM-5.2 的 1M 窗口，一次 MCP 往返返回带文件路径引用的答案。MCP 暴露三个工具：
+完整输入与执行步骤见上方命令及 [Demo 记录](docs/demo-results.json)。
 
-| 工具 | 作用 |
-|---|---|
-| `query_repo(question)` | 全仓库入上下文 + 一次调用回答问题 |
-| `list_files()` | 列出会被摄入的文件 + layer + 缓存状态 |
-| `cost_delta()` | 单次查询 token 成本 vs Opus |
+## 使用
 
-编程式 API：
+```bash
+.venv/bin/ctxfeed init --repo .
+.venv/bin/ctxfeed add ./src/ctxfeed/cli.py
+.venv/bin/ctxfeed cost --repo .
+.venv/bin/ctxfeed mcp --repo .
+```
+init 在没有对应模型密钥时使用 dry-run；设置密钥后该命令可能调用服务。MCP 客户端应将 command 配置为本仓库 `.venv/bin/ctxfeed` 的绝对路径，args 为 `["mcp", "--repo", "/absolute/repo"]`。
 
-```python
-from ctxfeed.cache_plan import CachePlan
+## 实际 Demo
 
-with CachePlan.for_repo("/path/to/repo") as cp:
-    plan = cp.plan()                       # 缓存感知 ShardPlan
-    qr = cp.query("auth middleware 在哪？")  # 全仓库一次往返
-    delta = cp.cost_delta()                # vs Opus 的成本差
-print(qr.answer, delta.savings_ratio_glm)
+<picture>
+  <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="assets/presentation/process-mobile-dark.svg">
+  <source media="(max-width: 640px)" srcset="assets/presentation/process-mobile-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/presentation/process-dark.svg">
+  <img src="assets/presentation/process-light.svg" width="1000" alt="完整脚本创建两份临时文件，连续构建三次计划。结果中的 cached_fraction 是本地文件哈希复用比例，不是模型缓存命中或实测费用。">
+</picture>
+
+### 查看三次计划
+
+首次、未修改、修改一次的变化集合分别是 2、0、1。
+
+```text
+$ .venv/bin/python examples/presentation-demo.py
+[
+  {
+    "stage": "first",
+    "files": 2,
+    "delta_hashes": 2,
+    "cached_fraction": 0.0,
+    "stable_prefix": [
+      "README.md"
+    ]
+  },
+  {
+    "stage": "unchanged",
+    "files": 2,
+    "delta_hashes": 0,
+    "cached_fraction": 1.0,
+    "stable_prefix": [
+      "README.md"
+    ]
+  },
+  {
+    "stage": "edited",
+    "files": 2,
+    "delta_hashes": 1,
+    "cached_fraction": 0.5,
+    "stable_prefix": [
+      "README.md"
+    ]
+  }
+]
 ```
 
-<h2><img src="https://api.iconify.design/tabler:photo.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> Demo</h2>
+## 能力与接入
 
-![demo](assets/demo.gif)
+<picture>
+  <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="assets/presentation/integrations-mobile-dark.svg">
+  <source media="(max-width: 640px)" srcset="assets/presentation/integrations-mobile-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/presentation/integrations-dark.svg">
+  <img src="assets/presentation/integrations-light.svg" width="1000" alt="CLI 提供 init、add、cost、mcp。MCP 的 list_files 展示文件与缓存标记，query_repo 提交问题，cost_delta 按仓库内的静态费率估算。GLM 与 DeepSeek 是可选适配器，不会自动完成模型供应商间的运行时故障切换。">
+</picture>
 
-10 分钟从 `git clone` 到首屏可见结果：`uvx ctxfeed init` → `uvx ctxfeed cost`，看到两个"可星标"数字——文件数（1000+ vs 40）和单次成本 vs Opus。
+CLI 提供 init、add、cost、mcp。MCP 的 list_files 展示文件与缓存标记，query_repo 提交问题，cost_delta 按仓库内的静态费率估算。GLM 与 DeepSeek 是可选适配器，不会自动完成模型供应商间的运行时故障切换。
 
-<h2><img src="https://api.iconify.design/tabler:adjustments.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> 配置</h2>
 
-| 环境变量 / 配置 | 类型 | 默认 | 含义 |
-|---|---|---|---|
-| `ZHIPU_API_KEY` | str | `""` | GLM-5.2 API key（空 → dry-run 模式） |
-| `GLM_API_KEY` | str | `""` | 别名，回退读 `ZHIPU_API_KEY` |
-| `CTXFEED_REPO_ROOT` | str | — | MCP server 的仓库根（也可 `--repo` 传） |
-| `IngestConfig.window` | int | `1_000_000` | GLM-5.2 上下文窗口 |
-| `IngestConfig.max_file_bytes` | int | `262144` | 跳过大于此值的文件 |
-| `IngestConfig.cache_db` | str | `.ctxfeed/cache.db` | SQLite 缓存键库路径 |
 
-<h2><img src="https://api.iconify.design/tabler:map-2.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> 路线图</h2>
+## 配置
 
-- [x] **m1 ingest benchmark** — 1000 文件摄入 GLM-5.2 1M 窗口 + repo-QA 对 200k-RAG 基线 kill-check
-- [x] **m2 shard + MCP** — 缓存感知 `ShardPlan` + stdio MCP server（`query_repo` / `list_files`）
-- [x] **m3 ship CLI** — `uvx ctxfeed init/add/cost` + 成本差 dashboard
-- [ ] 多供应商成本兜底（Kimi K3 / GLM 5.5 config stub）
-- [ ] ECC 级 agent-harness 集成 PR（dify / ECC 把 ctxfeed 作为 MCP 项目上下文后端）
+`--model` 优先于 `CTXFEED_MODEL`，可选 glm 或 deepseek。GLM 读取 `ZHIPU_API_KEY`/`GLM_API_KEY`，DeepSeek 读取 `DEEPSEEK_API_KEY`。IngestConfig 管理 window、headroom、max_file_bytes 和 cache_db；默认缓存为 `.ctxfeed/cache.db`。供应商模型名、窗口和费率是适配器中的配置假设，应按实际账户核对。
 
-### vs ChatGPT Projects / Claude Code 200k 窗口
+## 路线图与范围
 
-| 维度 | ctxfeed (GLM-5.2 1M) | ChatGPT Projects | Claude Code 200k |
-|---|:---:|:---:|:---:|
-| 文件上限 | ✓ 1000+ | ✗ 40 | 部分（按 token 截断） |
-| 单次查询成本 | ✓ CN 长上下文定价 | — 套餐 | ✗ US per-token |
-| prefix-cache 折扣 | ✓ DeepSeek V4 兜底 | — | ✗ |
-| MCP 原生接入 agent | ✓ stdio | ✗ | 部分 |
-| 企业合规/数据驻留 | ✗（CN 路由是硬停） | ✓ | ✓ |
+已实现预算计划、增量账本、两个适配器与 MCP。后续扩展应以真实仓库问答质量、服务端缓存遥测和供应商配置验证为依据。
 
-企业合规买家不在目标内——CN 路由对他们是硬停，不是偏好（mvp_plan §6 out of scope）。
+- 文件可能因忽略规则、大小或预算被跳过；不能保证任意仓库完整进入上下文。
+- dry-run 答案是内置模拟结果，cost 是静态估算；本示例没有调用模型。
 
-## 分享
+![Terminal recording](assets/demo.gif) · [Recording script](docs/demo.tape)
 
-```
-ctxfeed — 把整个 1000+ 文件仓库塞进 GLM-5.2 的 1M token 窗口，喂给 coding agent 的 MCP 项目上下文后端。绕过 ChatGPT 的 40 文件上限，单次成本低于 Opus。https://github.com/SuperMarioYL/ctxfeed
-```
+## 许可证
 
-## License + 贡献
-
-MIT — 见 [LICENSE](./LICENSE)。提 issue 或 PR：[github.com/SuperMarioYL/ctxfeed/issues](https://github.com/SuperMarioYL/ctxfeed/issues)。
-
-<p align="center"><sub><a href="./LICENSE">MIT</a> © 2026 SuperMarioYL</sub></p>
+[MIT](LICENSE)

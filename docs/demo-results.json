@@ -1,0 +1,17 @@
+{
+  "version": "0.7.0",
+  "scope": "Local source scan, ShardPlan and SQLite hash bookkeeping over two synthetic files across three revisions; no model call, provider cache hit or measured billing.",
+  "inputs": [
+    {
+      "path": "examples/presentation-demo.py",
+      "sha256": "001bcaab1e29c4d6f31088e042ee3e086626f63b27897e732f1a1741e0d947ea"
+    }
+  ],
+  "steps": [
+    {
+      "command": ".venv/bin/python examples/presentation-demo.py",
+      "output": "[\n  {\n    \"stage\": \"first\",\n    \"files\": 2,\n    \"delta_hashes\": 2,\n    \"cached_fraction\": 0.0,\n    \"stable_prefix\": [\n      \"README.md\"\n    ]\n  },\n  {\n    \"stage\": \"unchanged\",\n    \"files\": 2,\n    \"delta_hashes\": 0,\n    \"cached_fraction\": 1.0,\n    \"stable_prefix\": [\n      \"README.md\"\n    ]\n  },\n  {\n    \"stage\": \"edited\",\n    \"files\": 2,\n    \"delta_hashes\": 1,\n    \"cached_fraction\": 0.5,\n    \"stable_prefix\": [\n      \"README.md\"\n    ]\n  }\n]\n",
+      "exit_code": 0
+    }
+  ]
+}
