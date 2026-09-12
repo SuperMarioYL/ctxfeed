@@ -9,7 +9,7 @@
 
 **按 token 预算组织仓库文件，跟踪内容变化，并通过 CLI 或 MCP 提供项目上下文。**
 
-`v0.7.0` · `Python 3.12+` · [MIT](LICENSE)
+`v0.8.0` · `Python 3.12+` · [MIT](LICENSE)
 
 [Website](https://ctxfeed.lei6393.com) · [Demo record](docs/demo-results.json)
 

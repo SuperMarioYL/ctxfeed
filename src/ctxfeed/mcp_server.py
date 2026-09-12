@@ -106,7 +106,17 @@ def build_server(repo_root: Path | str | None = None, model: Optional[str] = Non
     or ``"deepseek"`` (V4 128k cost-fallback); overridable per-tool via the
     ``CTXFEED_MODEL`` env var.
     """
-    from mcp.server.fastmcp import FastMCP
+    # v0.8 fix (fix-mcp-2x-fastmcp-import): mcp 2.x renamed FastMCP to
+    # MCPServer and removed mcp.server.fastmcp, so the old 1.x-only import
+    # crashed on every fresh install that resolved mcp 2.x (the dependency
+    # spec used to be unbounded) and turned CI red. Import both majors; the
+    # surfaces ctxfeed uses are identical across them (verified against mcp
+    # 2.2.0: the ``instructions=`` kwarg, the ``@server.tool()`` decorator,
+    # ``run(transport="stdio")``, and ``_tool_manager.list_tools()``).
+    try:
+        from mcp.server.fastmcp import FastMCP  # mcp 1.x
+    except ModuleNotFoundError:
+        from mcp.server.mcpserver import MCPServer as FastMCP  # mcp 2.x
 
     server = FastMCP(
         "ctxfeed",

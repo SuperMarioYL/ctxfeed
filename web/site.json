@@ -10,9 +10,9 @@
   },
   "meta": {
     "visual_profile": "neon-particle",
-    "content_version": "0.7.0",
+    "content_version": "0.8.0",
     "demo_source": "docs/demo-results.json",
-    "source_version": "v0.7.0"
+    "source_version": "v0.8.0"
   },
   "hero": {
     "eyebrow": {

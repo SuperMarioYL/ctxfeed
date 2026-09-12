@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-13
+
+### Fixed
+
+- **fix-mcp-2x-fastmcp-import**: the MCP server import is now dual-compatible with both mcp 1.x and mcp 2.x. `build_server` (`src/ctxfeed/mcp_server.py`) imported `from mcp.server.fastmcp import FastMCP` — mcp 1.x only — while `pyproject.toml` declared the dependency unbounded (`mcp>=1.2`). The mcp SDK shipped 2.x, which renamed FastMCP to MCPServer and removed `mcp.server.fastmcp`, so the stdio MCP server crashed on import for every fresh install that resolved mcp 2.x (`pip install ctxfeed` / `uvx ctxfeed mcp`), and CI was red on main for both Python 3.12 and 3.13 (`ModuleNotFoundError` in the three `tests/test_v070.py` MCP tests). The import now tries mcp 1.x's FastMCP and falls back to mcp 2.x's `MCPServer` (verified against the real mcp 2.2.0: the `instructions=` kwarg, `@server.tool()`, `run(transport="stdio")`, and `_tool_manager.list_tools()` are all identical for ctxfeed's usage), and the dependency is bounded to `mcp>=1.2,<3` so a future mcp 3.x cannot break it silently again. A regression test forces the fallback branch (simulated mcp 2.x layout) and asserts all three tools still register.
+- **fix-for-repo-mutates-shared-config**: `CachePlan.for_repo` (`src/ctxfeed/cache_plan.py`) no longer mutates a caller-shared `IngestConfig`. The deepseek branch wrote `cfg.window = DEEPSEEK_CONTEXT_WINDOW` and both branches wrote `cfg.api_key` in place on the caller's object, so a shared config used for a deepseek plan then a glm plan carried DeepSeek's 128k window into every later GLM plan (the glm branch never reset it) — silently shrinking the GLM-5.2 budget to 12.8% and moving large repos' files into `skipped`. This contradicted the codebase's own documented invariant ("replace() keeps a caller-shared config object untouched", established for `cache_db` in v0.3). The effective config is now built with `dataclasses.replace()`, mirroring the cache-db anchoring pattern; api-key mirroring behavior is unchanged.
+- **fix-site-provenance-version-drift**: the site provenance is guarded against release drift. The `v0.7.0` tag shipped with `web/site.json` `meta.source_version` still reading `v0.6.0` (the refresh landed only in post-release docs commits), and `tests/test_version.py` only asserted the Python surfaces (`__version__` / `VERSION` / pyproject), leaving the site surface free to drift release after release — this repo's recurring bug class (v0.4.0: Python surfaces; v0.7.0: site surface). With this release `meta.source_version` reads `v0.8.0`, and `test_version.py` now asserts `site.json meta.source_version == "v" + __version__` so the next release cannot ship a stale site surface.
+
+### Changed
+
+- Bumped version to 0.8.0 (`__version__`, `VERSION`, `pyproject.toml`, `web/site.json` provenance, README version chips).
+
 ## [0.7.0] - 2026-08-31
 
 ### Fixed

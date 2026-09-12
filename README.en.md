@@ -9,7 +9,7 @@
 
 **Organize repository files within a token budget, track content changes and expose project context through CLI or MCP.**
 
-`v0.7.0` · `Python 3.12+` · [MIT](LICENSE)
+`v0.8.0` · `Python 3.12+` · [MIT](LICENSE)
 
 [Website](https://ctxfeed.lei6393.com) · [Demo record](docs/demo-results.json)
 

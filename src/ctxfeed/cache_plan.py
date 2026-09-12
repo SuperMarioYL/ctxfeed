@@ -187,17 +187,28 @@ class CachePlan:
                 api_key=os.environ.get("DEEPSEEK_API_KEY", "")
             )
             # Recompute the budget window against DeepSeek V4's 128k context.
-            cfg.window = DEEPSEEK_CONTEXT_WINDOW
-            if ds_cfg.api_key:
-                cfg.api_key = ds_cfg.api_key
+            # v0.8 fix (fix-for-repo-mutates-shared-config): build the
+            # effective config with replace() instead of mutating the
+            # caller's object — a shared IngestConfig used for a deepseek
+            # plan then a glm plan used to carry DeepSeek's 128k window into
+            # every later plan (the glm branch never reset it), silently
+            # shrinking the GLM budget to 12.8%. Mirrors the cache_db
+            # anchoring pattern in __init__ ("replace() keeps a
+            # caller-shared config object untouched").
+            cfg = replace(
+                cfg,
+                window=DEEPSEEK_CONTEXT_WINDOW,
+                api_key=ds_cfg.api_key or cfg.api_key,
+            )
             client: ModelClient = DeepSeekClient(ds_cfg)
         else:
             glm_cfg = glm or GLMConfig(api_key=cfg.api_key)
             if glm is not None:
                 # Mirror the GLM api_key into the ingest config so the budget
                 # stays consistent. Window stays at the IngestConfig default
-                # (1_000_000 for GLM-5.2).
-                cfg.api_key = glm_cfg.api_key
+                # (1_000_000 for GLM-5.2). replace() — never mutate the
+                # caller's config (v0.8 fix, same as the deepseek branch).
+                cfg = replace(cfg, api_key=glm_cfg.api_key)
             client = GLMClient(glm_cfg)
         return cls(root, config=cfg, model=client)
 
