@@ -10,9 +10,9 @@
   },
   "meta": {
     "visual_profile": "neon-particle",
-    "content_version": "0.8.0",
+    "content_version": "0.9.0",
     "demo_source": "docs/demo-results.json",
-    "source_version": "v0.8.0"
+    "source_version": "v0.9.0"
   },
   "hero": {
     "eyebrow": {
@@ -244,6 +244,6 @@
     }
   ],
   "footer": {
-    "tag": "0.7.0 · Python 3.12+ · MIT"
+    "tag": "0.9.0 · Python 3.12+ · MIT"
   }
 }

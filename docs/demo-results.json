@@ -1,5 +1,5 @@
 {
-  "version": "0.7.0",
+  "version": "0.9.0",
   "scope": "Local source scan, ShardPlan and SQLite hash bookkeeping over two synthetic files across three revisions; no model call, provider cache hit or measured billing.",
   "inputs": [
     {

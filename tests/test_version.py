@@ -40,3 +40,27 @@ def test_site_json_provenance_matches_version() -> None:
         (REPO_ROOT / "web" / "site.json").read_text(encoding="utf-8")
     )
     assert site["meta"]["source_version"] == f"v{ctxfeed.__version__}"
+
+
+def test_site_json_footer_and_content_version_match_version() -> None:
+    """footer.tag and meta.content_version must track the shipped version
+    (v0.9 fix, fix-site-footer-version-drift: the v0.8.0 release refreshed
+    meta.source_version but shipped with footer.tag still reading
+    "0.7.0 · Python 3.12+ · MIT" — user-visible in the published Pages
+    bundle — and no guard covered footer.tag / meta.content_version)."""
+    site = json.loads(
+        (REPO_ROOT / "web" / "site.json").read_text(encoding="utf-8")
+    )
+    assert site["footer"]["tag"].startswith(f"{ctxfeed.__version__} ·")
+    assert site["meta"]["content_version"] == ctxfeed.__version__
+
+
+def test_demo_results_version_matches_version() -> None:
+    """The demo provenance (referenced by site.json meta.demo_source) must
+    track the shipped version (v0.9 fix, fix-site-footer-version-drift:
+    the v0.8.0 tag shipped with docs/demo-results.json still reading
+    "version": "0.7.0")."""
+    demo = json.loads(
+        (REPO_ROOT / "docs" / "demo-results.json").read_text(encoding="utf-8")
+    )
+    assert demo["version"] == ctxfeed.__version__

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-17
+
+### Fixed
+
+- **fix-site-footer-version-drift**: the last two unguarded site version surfaces are refreshed and the whole site surface is now guard-tested. The v0.8.0 release (milestone fix-site-provenance-version-drift) refreshed `web/site.json` `meta.source_version` / `meta.content_version` but shipped with `footer.tag` still reading `0.7.0 · Python 3.12+ · MIT` (`web/site.json`) — user-visible: the published Pages bundle at ctxfeed.lei6393.com embeds that literal stale string, so the public site footer advertised the previous version on the v0.8.0 release. `docs/demo-results.json` (the demo provenance referenced by `meta.demo_source`) also still read `"version": "0.7.0"`. This is the same drift class as v0.4.0 (Python surfaces) and v0.7.0 (site meta): the enabler was a guard gap — `tests/test_version.py` asserted the Python surfaces + `meta.source_version` only, leaving `footer.tag`, `meta.content_version`, and the demo provenance free to drift. With this release `footer.tag` reads `0.9.0 · Python 3.12+ · MIT`, `meta.content_version` / `meta.source_version` / `docs/demo-results.json` `version` read `0.9.0` / `v0.9.0` / `0.9.0`, and `tests/test_version.py` gained two guards: `footer.tag` starts with the shipped version and `meta.content_version == __version__`, plus `docs/demo-results.json` `version == __version__` — so the next release cannot ship a stale site surface anywhere.
+
+### Changed
+
+- Bumped version to 0.9.0 (`__version__`, `VERSION`, `pyproject.toml`, `web/site.json` provenance + footer tag, `docs/demo-results.json`, README version chips).
+
 ## [0.8.0] - 2026-09-13
 
 ### Fixed
