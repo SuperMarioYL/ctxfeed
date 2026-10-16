@@ -177,6 +177,16 @@
           "zh": "`--model` 优先于 `CTXFEED_MODEL`，可选 glm 或 deepseek。GLM 读取 `ZHIPU_API_KEY`/`GLM_API_KEY`，DeepSeek 读取 `DEEPSEEK_API_KEY`。IngestConfig 管理 window、headroom、max_file_bytes 和 cache_db；默认缓存为 `.ctxfeed/cache.db`。供应商模型名、窗口和费率是适配器中的配置假设，应按实际账户核对。",
           "en": "`--model` overrides `CTXFEED_MODEL`; values are glm or deepseek. GLM reads `ZHIPU_API_KEY`/`GLM_API_KEY`; DeepSeek reads `DEEPSEEK_API_KEY`. IngestConfig owns window, headroom, max_file_bytes and cache_db, defaulting to `.ctxfeed/cache.db`. Adapter model names, windows and rates are configuration assumptions to check against the actual account."
         }
+      },
+      {
+        "title": {
+          "zh": "版本一致性",
+          "en": "Version consistency"
+        },
+        "body": {
+          "zh": "包版本（`__version__`/VERSION/pyproject）、站点标注（页脚与 meta）和 demo 记录由守护测试保持一致：发布时这些表面必须与同一版本号对齐，否则测试失败。v0.9.0 修复了页脚版本仍停留在 0.7.0 的漂移。",
+          "en": "The package version (`__version__`/VERSION/pyproject), the site provenance (footer and meta) and the demo record are held in lockstep by guard tests: a release cannot ship with a stale version surface. v0.9.0 fixes the drift where the site footer still advertised 0.7.0."
+        }
       }
     ]
   },
