@@ -64,3 +64,24 @@ def test_demo_results_version_matches_version() -> None:
         (REPO_ROOT / "docs" / "demo-results.json").read_text(encoding="utf-8")
     )
     assert demo["version"] == ctxfeed.__version__
+
+
+README_CHIP_RE = re.compile(r"`(v\d+\.\d+\.\d+)`")
+
+
+def _readme_chip(name: str) -> str:
+    match = README_CHIP_RE.search(
+        (REPO_ROOT / name).read_text(encoding="utf-8")
+    )
+    assert match, f"no `vX.Y.Z` version chip in {name}"
+    return match.group(1)
+
+
+def test_readme_version_chips_match_version() -> None:
+    """The two README version chips must track the shipped version (v0.10
+    fix, m5_version_lockstep: README chips were the last hand-edited version
+    surface with no guard, so a release could put the previous version on the
+    landing page with a green suite)."""
+    expected = f"v{ctxfeed.__version__}"
+    assert _readme_chip("README.md") == expected
+    assert _readme_chip("README.en.md") == expected

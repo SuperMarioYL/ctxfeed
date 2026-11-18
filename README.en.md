@@ -9,7 +9,7 @@
 
 **Organize repository files within a token budget, track content changes and expose project context through CLI or MCP.**
 
-`v0.9.0` · `Python 3.12+` · [MIT](LICENSE)
+`v0.10.0` · `Python 3.12+` · [MIT](LICENSE)
 
 [Website](https://ctxfeed.lei6393.com) · [Demo record](docs/demo-results.json)
 
@@ -129,6 +129,8 @@ The CLI exposes init, add, cost and mcp. MCP list_files shows files and cache ma
 Budgeted plans, change bookkeeping, two adapters and MCP are implemented. Further work should use real repository-QA results, provider cache telemetry and verified provider configuration.
 
 - Files can be skipped due to ignore rules, size or budget; arbitrary repositories are not guaranteed to fit.
+- The cache stores file hashes only; if it is corrupt or unwritable it is quarantined and rebuilt (a cold start) instead of failing the plan command.
+- The token budget reserves file content plus each file's prompt wrapper; the reported tokens remain content tokens.
 - Dry-run answers are built-in simulations and cost is a static estimate; this example calls no model.
 
 ![Terminal recording](assets/demo.gif) · [Recording script](docs/demo.tape)

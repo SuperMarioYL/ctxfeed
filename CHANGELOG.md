@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-19
+
+### Fixed
+
+- **m1_cache_store_degrade**: an unusable `.ctxfeed/cache.db` now degrades to a rebuilt cold cache instead of crashing every plan command. `CacheStore._connect` (`src/ctxfeed/ingest.py`) ran `sqlite3.connect` + `CREATE TABLE` with no failure handling, and every plan path funnels through it (`build_shard_plan` → `cache.delta`; `CachePlan._build_plan`; the CLI and MCP tools), so a truncated/garbage cache file — or a path that is a directory / not writable — surfaced as a raw traceback: `ctxfeed cost` exited 1 with `sqlite3.DatabaseError: file is not a database`, even on the documented no-key dry-run path. The store now quarantines a corrupt cache file to `<db>.corrupt-<epoch>` and rebuilds it; if the path itself cannot be opened it falls back to an in-memory store for that run (`CacheStore.degraded`), writing one stderr line. The cache is disposable hash bookkeeping, so the outcome is a cold start (`cache_hit_rate=0`), never data loss. Only `sqlite3.DatabaseError`/`OSError` are caught.
+- **m2_engine_cache_anchor**: a reused `IngestEngine` / `ShardPlanBuilder` now re-anchors its cache per repo-rooted call and never mutates a caller-shared `IngestConfig`. `_ensure_cache_anchored` wrote the first resolved absolute path back into `self.config.cache_db`, so after ingesting repo A the engine stayed pinned there: repo B's identical files reported `cache_hit_rate=1.0` without ever being ingested, repo B never got its own `.ctxfeed/cache.db`, and the caller's config object was modified — the v0.3 CWD-collision bug and the v0.8 shared-config invariant, both violated on the lower-level engine path. Both owners now keep the unresolved `cache_db` spec, resolve it from that spec on every call, reopen the store when the path changes, and rebind `self.config` with `dataclasses.replace()` instead of assigning into it. Absolute specs still pass through unchanged.
+- **m3_prompt_envelope_budget**: the per-file prompt wrapper is now charged to the token budget, so a plan reported as fitting actually fits the model window. Packing (`build_shard_plan`, `build_ingest_order`) charged only `chunk.tokens`, while `format_ingest_prompt` wraps every file as `\n<file path="...">\n...\n</file>` — measured 522 extra tokens over 37 files here (14.1/file) against a fixed 8,000-token headroom, which roughly 570 files exhaust. A 1,000-file plan at ~99% content fit therefore emitted ~14k uncharged tokens and overflowed GLM-5.2's window on a live call. Both packing loops now reserve a cheap envelope estimate computed from the wrapper/path only (never re-tokenizing content; measured conservative), and `ShardPlan.envelope_tokens` reports the reservation. `total_tokens` / `fit_ratio` keep their documented content-token meaning, so the cost dashboard is unchanged.
+- **m5_version_lockstep**: the README version chips are now guard-tested — the last version surface without one. Version drift is this repo's most-repeated defect (v0.4.0 Python surfaces, v0.7.0 site meta, v0.9.0 site footer + demo provenance); `tests/test_version.py` guarded every surface except `README.md` and `README.en.md`, whose `vX.Y.Z` chips were hand-edited each release. A guard now asserts both chips equal `v` + `__version__`.
+
+### Changed
+
+- **m4_single_plan_entry**: `CachePlan._build_plan_readonly` is gone. Since v0.6 moved cache persistence out of `_build_plan` into `_persist_plan`, the two methods were byte-identical, but the twin's docstring still claimed the ingest path persisted and that read-only callers MUST use it — a false statement on the hottest planning path. One entry point now serves both roles; the unused `CachePlan._builder` attribute (which shared the config object) is also removed. No behavior change: `cost_delta` / `files_vs_cap` / `cost_and_files` still leave the cache cold.
+- Bumped version to 0.10.0 (`__version__`, `VERSION`, `pyproject.toml`, both README chips, `web/site.json` provenance + footer tag, `docs/demo-results.json`).
+
 ## [0.9.0] - 2026-10-17
 
 ### Fixed

@@ -10,9 +10,9 @@
   },
   "meta": {
     "visual_profile": "neon-particle",
-    "content_version": "0.9.0",
+    "content_version": "0.10.0",
     "demo_source": "docs/demo-results.json",
-    "source_version": "v0.9.0"
+    "source_version": "v0.10.0"
   },
   "hero": {
     "eyebrow": {
@@ -184,8 +184,18 @@
           "en": "Version consistency"
         },
         "body": {
-          "zh": "包版本（`__version__`/VERSION/pyproject）、站点标注（页脚与 meta）和 demo 记录由守护测试保持一致：发布时这些表面必须与同一版本号对齐，否则测试失败。v0.9.0 修复了页脚版本仍停留在 0.7.0 的漂移。",
-          "en": "The package version (`__version__`/VERSION/pyproject), the site provenance (footer and meta) and the demo record are held in lockstep by guard tests: a release cannot ship with a stale version surface. v0.9.0 fixes the drift where the site footer still advertised 0.7.0."
+          "zh": "包版本（`__version__`/VERSION/pyproject）、两份 README 的版本徽标、站点标注（页脚与 meta）和 demo 记录由守护测试保持一致：发布时这些表面必须与同一版本号对齐，否则测试失败。v0.10.0 把 README 徽标纳入守护范围，这是最后一个未受保护的版本表面。",
+          "en": "The package version (`__version__`/VERSION/pyproject), both README version chips, the site provenance (footer and meta) and the demo record are held in lockstep by guard tests: a release cannot ship with a stale version surface. v0.10.0 extends the guard to the README chips — the last unguarded surface."
+        }
+      },
+      {
+        "title": {
+          "zh": "可靠性",
+          "en": "Reliability"
+        },
+        "body": {
+          "zh": "缓存文件损坏或不可写时会隔离旧文件并重建，冷启动照常给出计划；同一个引擎换仓库时会按仓库重新锚定缓存，不会把上一个仓库的命中率带过来；每个文件的提示词包装 token 也计入预算，避免报告“刚好放得下”时超出模型窗口。",
+          "en": "A corrupt or unwritable cache is quarantined and rebuilt, so a cold start still yields a plan; a reused engine re-anchors its cache per repository instead of carrying the previous repo's hit rate; and the per-file prompt wrapper is charged to the token budget, so a plan reported as fitting does not overflow the model window."
         }
       }
     ]
@@ -254,6 +264,6 @@
     }
   ],
   "footer": {
-    "tag": "0.9.0 · Python 3.12+ · MIT"
+    "tag": "0.10.0 · Python 3.12+ · MIT"
   }
 }

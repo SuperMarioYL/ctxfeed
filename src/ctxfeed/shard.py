@@ -39,7 +39,7 @@ Design notes:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -49,6 +49,7 @@ from .ingest import (
     IngestConfig,
     TokenBudget,
     _resolve_cache_db,
+    chunk_envelope_tokens,
     format_ingest_prompt,
     scan_repo,
 )
@@ -169,6 +170,10 @@ class ShardPlan:
     budget: Optional[TokenBudget] = None
     skipped: list[FileChunk] = field(default_factory=list)
     total_tokens: int = 0
+    # v0.10 fix (fix-prompt-envelope-budget-overflow): tokens reserved for the
+    # per-file prompt wrapper (`<file path="...">` + `</file>`). Charged to the
+    # budget but NOT part of total_tokens, which stays the content-token total.
+    envelope_tokens: int = 0
 
     @property
     def files(self) -> int:
@@ -252,6 +257,7 @@ class ShardPlan:
             "skipped": len(self.skipped),
             "delta": len(self.delta),
             "total_tokens": self.total_tokens,
+            "envelope_tokens": self.envelope_tokens,
             "budget": self.budget.window if self.budget else None,
             "fit_ratio": round(self.fit_ratio, 4),
             "cache_hit_rate": round(self.cache_hit_rate, 4),
@@ -323,16 +329,23 @@ def build_shard_plan(
     body_sorted = [c for c, _ in body_with_scores]
 
     # 4. Pack stable_prefix first, then repo_body, into the budget
+    # v0.10 fix (fix-prompt-envelope-budget-overflow): reserve the per-file
+    # prompt wrapper too, otherwise a plan whose CONTENT fits exactly overflows
+    # the window once FileChunk.render adds ~14 tokens/file.
     for chunk in stable:
-        if budget.consume(chunk.tokens):
+        envelope = chunk_envelope_tokens(chunk)
+        if budget.consume(chunk.tokens + envelope):
             plan.stable_prefix.append(chunk)
             plan.total_tokens += chunk.tokens
+            plan.envelope_tokens += envelope
         else:
             plan.skipped.append(chunk)
     for chunk in body_sorted:
-        if budget.consume(chunk.tokens):
+        envelope = chunk_envelope_tokens(chunk)
+        if budget.consume(chunk.tokens + envelope):
             plan.repo_body.append(chunk)
             plan.total_tokens += chunk.tokens
+            plan.envelope_tokens += envelope
         else:
             plan.skipped.append(chunk)
 
@@ -371,22 +384,24 @@ class ShardPlanBuilder:
 
     def __init__(self, config: IngestConfig | None = None):
         self.config = config or IngestConfig()
+        # v0.10 fix (fix-engine-cache-anchor-pins-first-repo): see
+        # IngestEngine._ensure_cache_anchored — keep the anchor spec unresolved.
+        self._cache_db_spec = self.config.cache_db
         self.cache = CacheStore(self.config.cache_db)
 
     def _ensure_cache_anchored(self, root: Path) -> None:
         """Re-anchor a relative ``cache_db`` to ``root`` (v0.3 fix).
 
-        Idempotent: a no-op when ``cache_db`` is already absolute (the common
-        test case). When relative (the ``.ctxfeed/cache.db`` default), the
-        cache is re-opened anchored to the repo root so two repos built from
-        the same process CWD don't share one cache (false cache hits).
+        v0.10 fix (fix-engine-cache-anchor-pins-first-repo): resolve from the
+        original spec on every call and rebind with ``replace()`` so a reused
+        builder re-anchors per repo and never mutates a caller-shared config.
         Mirrors :meth:`ctxfeed.ingest.IngestEngine._ensure_cache_anchored`.
         """
-        resolved = _resolve_cache_db(self.config.cache_db, root)
-        if resolved != self.config.cache_db:
+        resolved = _resolve_cache_db(self._cache_db_spec, root)
+        if resolved != self.cache.db_path:
             self.cache.close()
-            self.config.cache_db = resolved
             self.cache = CacheStore(resolved)
+            self.config = replace(self.config, cache_db=resolved)
 
     def _build_budget(self) -> TokenBudget:
         return TokenBudget(

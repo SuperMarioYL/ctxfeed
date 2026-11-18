@@ -9,7 +9,7 @@
 
 **按 token 预算组织仓库文件，跟踪内容变化，并通过 CLI 或 MCP 提供项目上下文。**
 
-`v0.9.0` · `Python 3.12+` · [MIT](LICENSE)
+`v0.10.0` · `Python 3.12+` · [MIT](LICENSE)
 
 [Website](https://ctxfeed.lei6393.com) · [Demo record](docs/demo-results.json)
 
@@ -129,6 +129,8 @@ CLI 提供 init、add、cost、mcp。MCP 的 list_files 展示文件与缓存标
 已实现预算计划、增量账本、两个适配器与 MCP。后续扩展应以真实仓库问答质量、服务端缓存遥测和供应商配置验证为依据。
 
 - 文件可能因忽略规则、大小或预算被跳过；不能保证任意仓库完整进入上下文。
+- 缓存只保存文件哈希账本；文件损坏或不可写时会被隔离并重建（冷启动），不会让计划命令崩溃。
+- token 预算为文件内容和每个文件的提示词包装分别预留；报告中的 tokens 仍是内容 token。
 - dry-run 答案是内置模拟结果，cost 是静态估算；本示例没有调用模型。
 
 ![Terminal recording](assets/demo.gif) · [Recording script](docs/demo.tape)

@@ -30,8 +30,9 @@ import hashlib
 import json
 import os
 import sqlite3
+import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional, Sequence
@@ -231,6 +232,21 @@ def count_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def chunk_envelope_tokens(chunk: FileChunk) -> int:
+    """Tokens :meth:`FileChunk.render` adds around ``chunk.content``.
+
+    v0.10 fix (fix-prompt-envelope-budget-overflow): the ingest prompt wraps
+    every chunk as ``\\n<file path="...">\\n{content}\\n</file>``, but the budget
+    pass charged only ``chunk.tokens``. The wrapper is ~14 tokens/file, so a
+    1000-file plan reported at ~99% content fit emitted ~14k uncharged tokens —
+    more than the fixed 8_000 headroom — and overflowed the model window on a
+    live call. Estimate from the wrapper + path only; never re-tokenize the
+    file content. The estimate is deliberately conservative (measured 588 vs
+    551 actual marginal tokens over 37 files on this repo).
+    """
+    return count_tokens(f"\n{chunk.header()}\n") + count_tokens("\n</file>")
+
+
 # ---------------------------------------------------------------------------
 # Repo scanning
 # ---------------------------------------------------------------------------
@@ -424,13 +440,13 @@ def build_ingest_order(
     skipped: list[FileChunk] = []
 
     for chunk in stable:
-        if budget.consume(chunk.tokens):
+        if budget.consume(chunk.tokens + chunk_envelope_tokens(chunk)):
             ordered.append(chunk)
         else:
             skipped.append(chunk)
 
     for chunk in body:
-        if budget.consume(chunk.tokens):
+        if budget.consume(chunk.tokens + chunk_envelope_tokens(chunk)):
             ordered.append(chunk)
         else:
             skipped.append(chunk)
@@ -664,14 +680,21 @@ class CacheStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        # v0.10 fix (fix-cache-store-corrupt-db-crash): set when the configured
+        # cache could not be opened at all and an in-memory store is serving
+        # instead. The on-disk file is disposable hash bookkeeping, so losing it
+        # costs a cold start, never user data.
+        self.degraded = False
+        self.degraded_reason = ""
 
-    def _connect(self) -> sqlite3.Connection:
-        if self._conn is None:
-            db_dir = os.path.dirname(self.db_path)
-            if db_dir:
-                os.makedirs(db_dir, exist_ok=True)
-            self._conn = sqlite3.connect(self.db_path)
-            self._conn.execute(
+    def _open(self, db_path: str) -> sqlite3.Connection:
+        """Connect and ensure the schema. Raises on an unusable path/file."""
+        db_dir = os.path.dirname(db_path)
+        if db_dir and db_path != ":memory:":
+            os.makedirs(db_dir, exist_ok=True)
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cache_keys (
                     file_hash  TEXT PRIMARY KEY,
@@ -683,7 +706,7 @@ class CacheStore:
                 )
                 """
             )
-            self._conn.execute(
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS ingest_runs (
                     run_id     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -695,7 +718,68 @@ class CacheStore:
                 )
                 """
             )
-            self._conn.commit()
+        except BaseException:
+            conn.close()
+            raise
+        conn.commit()
+        return conn
+
+    def _quarantine(self, exc: BaseException) -> None:
+        """Move an unusable cache file aside so the next open can rebuild it.
+
+        Only a file that is not a SQLite database is moved: a transient failure
+        on a valid file (e.g. "database is locked" from a concurrent ctxfeed
+        process — still a ``sqlite3.DatabaseError``) must not discard the
+        caller's cache.
+        """
+        reason = f"{type(exc).__name__}: {exc}"
+        if os.path.isfile(self.db_path):
+            try:
+                with open(self.db_path, "rb") as fh:
+                    is_sqlite = fh.read(16) == b"SQLite format 3\x00"
+            except OSError:
+                is_sqlite = False
+            if not is_sqlite:
+                try:
+                    quarantined = f"{self.db_path}.corrupt-{int(time.time())}"
+                    os.replace(self.db_path, quarantined)
+                    print(
+                        f"ctxfeed: discarded unusable cache {self.db_path} "
+                        f"({reason}); rebuilding it.",
+                        file=sys.stderr,
+                    )
+                    return
+                except OSError:
+                    pass
+        print(
+            f"ctxfeed: cannot use cache {self.db_path} ({reason}); "
+            f"using an in-memory cache for this run.",
+            file=sys.stderr,
+        )
+
+    def _connect(self) -> sqlite3.Connection:
+        """Open (and lazily initialise) the store.
+
+        v0.10 fix (fix-cache-store-corrupt-db-crash): a corrupt/truncated cache
+        file used to raise ``sqlite3.DatabaseError`` ("file is not a database")
+        out of every plan path, turning `ctxfeed cost`/`init`, the MCP tools and
+        the library into a traceback. The cache is disposable, so quarantine the
+        bad file and rebuild; if the path itself is unusable (a directory, a
+        read-only checkout) fall back to an in-memory store for this run. Only
+        sqlite3/OS errors are caught — programming errors still surface.
+        """
+        if self._conn is None:
+            try:
+                self._conn = self._open(self.db_path)
+                return self._conn
+            except (sqlite3.DatabaseError, OSError) as exc:
+                self._quarantine(exc)
+            try:
+                self._conn = self._open(self.db_path)
+            except (sqlite3.DatabaseError, OSError) as exc:
+                self.degraded = True
+                self.degraded_reason = f"{type(exc).__name__}: {exc}"
+                self._conn = self._open(":memory:")
         return self._conn
 
     def get(self, file_hash: str) -> dict | None:
@@ -892,23 +976,30 @@ class IngestEngine:
 
     def __init__(self, config: IngestConfig | None = None):
         self.config = config or IngestConfig()
+        # v0.10 fix (fix-engine-cache-anchor-pins-first-repo): keep the
+        # configured (possibly relative) cache_db as the anchor spec. Resolving
+        # it once and writing the absolute path back into self.config pinned a
+        # reused engine to the first repo (see _ensure_cache_anchored).
+        self._cache_db_spec = self.config.cache_db
         self.cache = CacheStore(self.config.cache_db)
 
     def _ensure_cache_anchored(self, root: Path) -> None:
         """Re-anchor a relative ``cache_db`` to ``root`` (v0.3 fix).
 
-        Idempotent: when ``cache_db`` is already absolute (the common case —
-        tests pass an explicit tmp path), this is a no-op. When it is relative
-        (the ``.ctxfeed/cache.db`` default), the cache is re-opened anchored
-        to the repo root so two repos ingested from the same process CWD do
-        not share one cache file — which would let content-equal files
-        (README, lockfiles) falsely register as cache hits.
+        v0.10 fix (fix-engine-cache-anchor-pins-first-repo): resolve from the
+        ORIGINAL spec on every call and rebind ``self.config`` with
+        ``replace()`` rather than assigning into it. The old implementation
+        wrote the first resolved absolute path back into the config, so a reused
+        engine kept repo A's cache for repo B (false cache hits — the v0.3
+        CWD-collision bug, resurrected) and mutated a caller-shared
+        :class:`IngestConfig` (the invariant v0.8 established for
+        ``CachePlan.for_repo``). Absolute specs still pass through unchanged.
         """
-        resolved = _resolve_cache_db(self.config.cache_db, root)
-        if resolved != self.config.cache_db:
+        resolved = _resolve_cache_db(self._cache_db_spec, root)
+        if resolved != self.cache.db_path:
             self.cache.close()
-            self.config.cache_db = resolved
             self.cache = CacheStore(resolved)
+            self.config = replace(self.config, cache_db=resolved)
 
     def _build_budget(self) -> TokenBudget:
         return TokenBudget(

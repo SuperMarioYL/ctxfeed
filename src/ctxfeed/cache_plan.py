@@ -54,7 +54,7 @@ from .models.deepseek import (
     DeepSeekClient,
     DeepSeekConfig,
 )
-from .shard import ShardPlan, ShardPlanBuilder, build_shard_plan
+from .shard import ShardPlan, build_shard_plan
 
 __all__ = [
     "CachePlan",
@@ -157,7 +157,6 @@ class CachePlan:
             model = GLMClient(glm_cfg)
         self.model = model
         self.cache = CacheStore(self.config.cache_db)
-        self._builder = ShardPlanBuilder(self.config)
 
     @classmethod
     def for_repo(
@@ -215,24 +214,26 @@ class CachePlan:
     # -- core operations ------------------------------------------------
 
     def _build_plan(self) -> tuple[ShardPlan, str]:
-        """Scan + plan + render prompt. Returns (plan, prompt).
+        """Scan + plan + render prompt. Returns (plan, prompt). Never persists.
 
-        v0.6 fix (fix-cache-polluted-on-failed-model-call): this method no
-        longer persists cache keys or records an ingest run. Persisting is
-        gated on a successful model call — :meth:`ingest` / :meth:`query`
-        call :meth:`_persist_plan` only AFTER ``self.model.ingest`` /
+        v0.6 fix (fix-cache-polluted-on-failed-model-call): this method does
+        not persist cache keys or record an ingest run. Persisting is gated on
+        a successful model call — :meth:`ingest` / :meth:`query` call
+        :meth:`_persist_plan` only AFTER ``self.model.ingest`` /
         ``self.model.query`` returns, mirroring
         :meth:`ctxfeed.ingest.IngestEngine.ingest_repo`'s persist-after-call
-        ordering (ingest.py:970-977). A live call that fails AFTER this method
-        (a bad key surfacing as a terminal 401, or a 429/503/504 exhausting
-        the retry budget) must not warm the cache or log an ingest_run —
-        otherwise the next call computes delta against the warmed cache and
-        reports a false ``cache_hit_rate=100%`` (CLI ``init`` cache-hit row +
-        the MCP ``list_files`` 'cached' flag) with no real ingest having
-        succeeded. :meth:`plan` (no model call) keeps persisting inline via
-        :meth:`_persist_plan`. Read-only cost/files queries MUST use
-        :meth:`_build_plan_readonly` so they do not pollute the cache or the
-        ingest_runs ledger (v0.2 fix: fix-cost-path-cache-pollution).
+        ordering (ingest.py). A live call that fails AFTER this method (a bad
+        key surfacing as a terminal 401, or a 429/503/504 exhausting the retry
+        budget) must not warm the cache or log an ingest_run — otherwise the
+        next call computes delta against the warmed cache and reports a false
+        ``cache_hit_rate=100%``. :meth:`plan` (no model call) persists inline
+        via :meth:`_persist_plan`; the read-only queries (:meth:`cost_delta`,
+        :meth:`files_vs_cap`, :meth:`cost_and_files`) simply never call it
+        (v0.2 fix: fix-cost-path-cache-pollution).
+
+        v0.10 (m4_single_plan_entry): a separate ``_build_plan_readonly`` twin
+        used to duplicate this body and claim the ingest path persisted here.
+        Since v0.6 moved persistence out, one entry point serves both roles.
         """
         chunks = scan_repo(self.root, self.config)
         budget = TokenBudget(
@@ -268,23 +269,6 @@ class CachePlan:
             cache_hits=cached,
             cache_misses=plan.files - cached,
         )
-
-    def _build_plan_readonly(self) -> tuple[ShardPlan, str]:
-        """Scan + plan + render prompt WITHOUT persisting or recording a run.
-
-        The delta is still computed against the cache (so the plan reflects what
-        *would* be re-ingested), but no ``cache.put`` / ``record_run`` happens.
-        Use this for ``cost_delta`` / ``files_vs_cap`` so a read-only cost query
-        cannot inflate the ``cache_hit`` metric on a subsequent ``init`` (v0.2
-        fix). The ingest path (``_build_plan``) keeps persisting.
-        """
-        chunks = scan_repo(self.root, self.config)
-        budget = TokenBudget(
-            window=self.config.window, headroom=self.config.headroom
-        )
-        plan = build_shard_plan(chunks, budget, cache=self.cache)
-        prompt = plan.to_prompt(self.config)
-        return plan, prompt
 
     def plan(self) -> PlanResult:
         """Build the cache-aware ShardPlan + render the ingest prompt.
@@ -371,7 +355,7 @@ class CachePlan:
         Read-only: does NOT persist cache keys or record a run (v0.2 fix),
         so a ``ctxfeed cost`` query cannot pollute the cache_hit metric.
         """
-        plan, _prompt = self._build_plan_readonly()
+        plan, _prompt = self._build_plan()
         return compute_cost_delta(
             input_tokens=plan.total_tokens,
             output_tokens=output_tokens,
@@ -383,7 +367,7 @@ class CachePlan:
 
         Read-only: does NOT persist cache keys or record a run (v0.2 fix).
         """
-        plan, _prompt = self._build_plan_readonly()
+        plan, _prompt = self._build_plan()
         return {
             "files_accepted": plan.files,
             "chatgpt_cap": CHATGPT_FILE_CAP,
@@ -404,7 +388,7 @@ class CachePlan:
         twice. This single-pass read-only method computes both numbers from one
         plan without mutating the cache.
         """
-        plan, _prompt = self._build_plan_readonly()
+        plan, _prompt = self._build_plan()
         delta = compute_cost_delta(
             input_tokens=plan.total_tokens,
             output_tokens=output_tokens,
